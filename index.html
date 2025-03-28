@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Magic Link Crystal Ball</title>
+  <title>Becky Boop's Crystal Ball</title>
   <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap" rel="stylesheet">
   <style>
     body {
@@ -14,7 +14,7 @@
       position: relative;
       margin: 0;
     }
-    /* Background image with 50% opacity */
+    /* Full-page background image with 50% opacity */
     body::before {
       content: "";
       position: fixed;
@@ -24,12 +24,12 @@
       width: 100%;
       background: url("https://cdn.midjourney.com/6aec079f-8bc3-41fc-9b3e-a0d7485f4fca/0_0.png") no-repeat center center;
       background-size: cover;
-      opacity: 0.25;
+      opacity: 0.5;
       z-index: -1;
     }
     h1 {
       font-family: 'Great Vibes', cursive;
-      font-size: 72px;
+      font-size: 48px;
       margin-bottom: 30px;
       color: #FFCEE8;
       text-shadow: 0 0 10px #FFCEE8, 0 0 20px #FFCECF;
@@ -40,16 +40,33 @@
       height: 450px; /* 4:3 aspect ratio */
       overflow: hidden;
       border-radius: 20px;
-      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.7); /* Drop shadow effect */
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.7); /* Initial drop shadow */
+      transition: box-shadow 0.3s ease; /* Smooth transition */
+    }
+    /* Glowing effect on the image wrapper when hovered */
+    .image-wrapper:hover {
+      box-shadow: 0 0 20px 10px rgba(255, 206, 232, 0.8);
     }
     .image-wrapper img {
       width: 100%;
       height: 100%;
       object-fit: cover;
       cursor: pointer;
+      /* Initial glowing effect on image */
+      filter: drop-shadow(0 0 10px #000);
+      animation: glow 2s ease-in-out infinite alternate;
     }
+    /* Add shaking on hover, while keeping the glow */
     .image-wrapper:hover img {
-      animation: shake 0.6s infinite;
+      animation: glow 2s ease-in-out infinite alternate, shake 0.6s infinite;
+    }
+    @keyframes glow {
+      from {
+        filter: drop-shadow(0 0 10px #FFCEE8);
+      }
+      to {
+        filter: drop-shadow(0 0 20px #FFCEE8);
+      }
     }
     @keyframes shake {
       0% { transform: translate(1px, 1px) rotate(0deg); }
