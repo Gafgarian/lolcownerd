@@ -2,34 +2,55 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Becky Boop's Crystal Ball</title>
+  <title>Magic Link Crystal Ball</title>
+  <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap" rel="stylesheet">
   <style>
     body {
-      background: #111;
+      background-color: #111;
       text-align: center;
       padding-top: 50px;
+      color: white;
+      font-family: sans-serif;
+      position: relative;
+      margin: 0;
     }
-
+    /* Background image with 50% opacity */
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 100%;
+      background: url("https://cdn.midjourney.com/6aec079f-8bc3-41fc-9b3e-a0d7485f4fca/0_0.png") no-repeat center center;
+      background-size: cover;
+      opacity: 0.25;
+      z-index: -1;
+    }
+    h1 {
+      font-family: 'Great Vibes', cursive;
+      font-size: 72px;
+      margin-bottom: 30px;
+      color: #FFCEE8;
+      text-shadow: 0 0 10px #FFCEE8, 0 0 20px #FFCECF;
+    }
     .image-wrapper {
       display: inline-block;
       width: 600px;
-      height: 450px; /* 4:3 aspect ratio (600x450) */
+      height: 450px; /* 4:3 aspect ratio */
       overflow: hidden;
       border-radius: 20px;
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.7); /* Drop shadow effect */
     }
-
     .image-wrapper img {
       width: 100%;
       height: 100%;
       object-fit: cover;
       cursor: pointer;
-      transition: transform 0.2s ease;
     }
-
     .image-wrapper:hover img {
       animation: shake 0.6s infinite;
     }
-
     @keyframes shake {
       0% { transform: translate(1px, 1px) rotate(0deg); }
       10% { transform: translate(-1px, -2px) rotate(-1deg); }
@@ -46,6 +67,7 @@
   </style>
 </head>
 <body>
+  <h1>Ask Me Anything</h1>
   <a href="https://nimble.li/29xpo5kd" target="_blank">
     <div class="image-wrapper">
       <img src="https://cdn.midjourney.com/9e3211ba-ef12-41d2-bab9-26140395e009/0_3.png" alt="Crystal Ball">
