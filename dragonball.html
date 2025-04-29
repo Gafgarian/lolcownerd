@@ -21,8 +21,8 @@
       margin-bottom: 20px;
     }
     #ball-tracker img {
-      width: 50px;
-      height: 50px;
+      width: 100px;
+      height: 100px;
       filter: grayscale(100%);
       transition: filter 0.3s;
     }
@@ -42,8 +42,8 @@
     #scan-btn:hover { background: #fff58c; }
 
     #radar-grid {
-      width: 400px;
-      height: 400px;
+      width: 800px;
+      height: 800px;
       background: #0b3;
       display: grid;
       grid-template-columns: repeat(8,1fr);
@@ -150,7 +150,7 @@
 
 <script>
   const TOTAL = 7;
-  const chancePercent = 30;
+  const chancePercent = 50;
   let foundCount = 0;
 
   const grid        = document.getElementById('radar-grid');
