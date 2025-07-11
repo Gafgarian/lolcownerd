@@ -2,7 +2,7 @@ var cWidth = 800;
 var cHeight = 450;
 var breadCanvas;
 //URL's of breads in breads folder
-var breads = {0:["keem-sp.png",'Keem'],1:["beans-sp.png",'Beans'], 2:["billy-sp.png",'Billy'],3:["boogie-archive.png",'Boogie'],4:["buff-sp.png",'Buff'],5:['cdrom-sp.png', 'CD-Rom'],6:['glamy-sp.png','Glamy'],7:['ken-sp.png','Ken'],8:['knightmare-sp.png','Knightmare'],9:['rastov-archive.png','Rastov'],10:['tina-sp.png','Tina D'],11:['xylie-sp.png','Xylie'],12:['zey-sp.png', 'Zey']};
+var breads = {0:["keem-sp.png",'Keem'],1:["beans-sp.png",'Beans'], 2:["billy-sp.png",'Billy'],3:["boogie-archive.png",'Boogie'],4:["buff-sp.png",'Buff'],5:['cdrom-sp.png', 'CD-Rom'],6:['glamy-sp.png','Glamy'],7:['ken-sp.png','Ken'],8:['knightmare-sp.png','Knightmare'],9:['rastov-sp-archive.png','Rastov'],10:['tina-sp.png','Tina D'],11:['xylie-sp.png','Xylie'],12:['zey-sp.png', 'Zey']};
 
 //Number of breads
 var breadcount = 0;
