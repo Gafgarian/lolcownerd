@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NDF War Table — HQ</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+  <script src="assets/session-guard.js"></script>
+</head>
+<body>
+  <div class="tent-weave"></div>
+
+  <!-- Banner -->
+  <img class="banner" src="assets/nerdsBanner.png" alt="Nerds banner" />
+
+  <!-- Map + frame (now sized by aspect-ratio so interior exists at load) -->
+  <section class="map-frame">
+    <img class="frame-art" src="assets/ndf_frame.png" alt="" aria-hidden="true"/>
+
+    <!-- Progress pill overlaps the frame edge -->
+    <div class="groove">
+      <div class="rail">
+        <div class="chip">
+          <div class="title" id="progLabel">Campaign Progress — 0.0%</div>
+          <div class="bar"><div id="progFill" class="fill" style="width:0%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interior window (map fills and is clipped here) -->
+    <div class="map-window" id="mapViewport" aria-label="Map window">
+      <div id="mapContent">
+        <canvas id="mapCanvas" aria-hidden="true"></canvas>
+        <canvas id="magCanvas" aria-hidden="true"></canvas>
+        <svg class="hex-overlay" id="hexSvg" viewBox="0 0 1000 562.5" preserveAspectRatio="none"></svg>
+        <img id="ndfIcon" class="ndf-hq" src="assets/icons/ndfHQ.png" alt="NDF HQ"/>
+      </div>
+      <div class="fog"></div>
+    </div>
+
+    <!-- Zoom controls on the frame -->
+    <div class="zoom-wrap">
+      <button id="zoomIn"  class="zoom-btn" aria-label="Zoom in">+</button>
+      <button id="zoomOut" class="zoom-btn" aria-label="Zoom out">−</button>
+    </div>
+  </section>
+
+  <!-- Sliding table above the frame -->
+  <section class="table-wrap">
+    <div class="table">
+      <div class="felt">
+        <div class="items" id="itemsGrid"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="tip" id="tooltip"></div>
+
+  <!-- Generic modal -->
+  <div class="modal-backdrop" id="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modaltitle">
+      <h4 id="modaltitle">Hex Selected</h4>
+      <p id="modalcontent">You clicked hex <strong>#0</strong>.</p>
+      <div class="actions">
+        <button class="btn" id="closeBtn">Close</button>
+        <button class="btn yellow" id="confirmBtn">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- File-styled modal for desk items -->
+  <div class="file-backdrop" id="fileModal">
+    <div class="file-modal" role="dialog" aria-modal="true" aria-labelledby="fileTitle">
+      <div class="file-tab" id="fileTab">APPS</div>
+      <div class="file-paper">
+        <h4 id="fileTitle">Applications</h4>
+        <div id="fileBody"></div>
+      </div>
+      <button class="file-close" id="fileClose" aria-label="Close">✕</button>
+    </div>
+  </div>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>

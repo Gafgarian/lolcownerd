@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Becky Boop's Crystal Ball</title>
+  <script src="../../assets/session-guard.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap" rel="stylesheet">
+    <style>
+      body {
+        background-color: #111;
+        text-align: center;
+        padding-top: 50px;
+        color: white;
+        font-family: sans-serif;
+        position: relative;
+        margin: 0;
+      }
+      /* Full-page background image with 50% opacity */
+      body::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 100%;
+        background: url("https://cdn.midjourney.com/6aec079f-8bc3-41fc-9b3e-a0d7485f4fca/0_0.png") no-repeat center center;
+        background-size: cover;
+        opacity: 0.35;
+        z-index: -1;
+      }
+      h1 {
+        font-family: 'Great Vibes', cursive;
+        font-size: 48px;
+        margin-bottom: 30px;
+        color: #FFCEE8;
+        text-shadow: 0 0 10px #FFCEE8, 0 0 20px #FFCECF;
+      }
+      .image-wrapper {
+        display: inline-block;
+        width: 600px;
+        height: 450px; /* 4:3 aspect ratio */
+        overflow: hidden;
+        border-radius: 20px;
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.7);
+        transition: box-shadow 0.3s ease;
+        cursor: pointer;
+      }
+      /* Glowing effect on hover for the container */
+      .image-wrapper:hover {
+        box-shadow: 0 0 20px 10px rgba(255, 206, 232, 0.8);
+      }
+      .image-wrapper img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        filter: drop-shadow(0 0 10px #FFCEE8);
+        animation: glow 2s ease-in-out infinite alternate;
+      }
+      /* On hover, add shaking while maintaining the glow */
+      .image-wrapper:hover img {
+        animation: glow 2s ease-in-out infinite alternate, shake 0.6s infinite;
+      }
+      @keyframes glow {
+        from {
+          filter: drop-shadow(0 0 10px #FFCEE8);
+        }
+        to {
+          filter: drop-shadow(0 0 20px #FFCEE8);
+        }
+      }
+      @keyframes shake {
+        0% { transform: translate(1px, 1px) rotate(0deg); }
+        10% { transform: translate(-1px, -2px) rotate(-1deg); }
+        20% { transform: translate(-3px, 0px) rotate(1deg); }
+        30% { transform: translate(3px, 2px) rotate(0deg); }
+        40% { transform: translate(1px, -1px) rotate(1deg); }
+        50% { transform: translate(-1px, 2px) rotate(-1deg); }
+        60% { transform: translate(-3px, 1px) rotate(0deg); }
+        70% { transform: translate(3px, 1px) rotate(-1deg); }
+        80% { transform: translate(-1px, -1px) rotate(1deg); }
+        90% { transform: translate(1px, 2px) rotate(0deg); }
+        100% { transform: translate(1px, -2px) rotate(-1deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Ask Me Anything</h1>
+    <div class="image-wrapper" id="crystalBall">
+      <img src="https://cdn.midjourney.com/9e3211ba-ef12-41d2-bab9-26140395e009/0_3.png" alt="Crystal Ball">
+    </div>
+
+    <script>
+      // ADD URLS TO THIS LIST
+      const urlList = [
+        "https://youtube.com/clip/UgkxHcBLWvT5OsEl3EyMlivlYXMY8LZzIedZ?si=dvJN5JG6Cu7t-4PG",
+        "https://youtube.com/clip/UgkxKVAllozfPc04g17iiOkpK5mGj_eoIrkA?si=Onh-4c-td3CO8iQZ",
+        "https://youtube.com/clip/Ugkx4m76Cz_T0Yg8suUEU2Nodjy0AgfVc2vU?si=qqYv_rkxiwzI5mqT",
+        "https://youtube.com/clip/UgkxXKQIzcBon7QFtlHIbu-TEvk4hL5Xu4XW?si=Qmqefmkl7Mp8b7kH",
+        "https://youtube.com/clip/UgkxL6Fai8Ss30rMLEt00xSjwLoM9eHKY4a-?si=ciw6sqvJVPtL7T60",
+        "https://youtube.com/clip/UgkxBfTJvKbTk_a-juSCzAlNOPGwLIQwLBin?si=aHWItoV-SzYIG7Lt",
+        "https://youtube.com/clip/UgkxglRDldbRkKjer-aSZ3-arxf8pdojiIgS?si=Ap5D3iovuOm_tyVB",
+        "https://youtube.com/clip/UgkxaL2Rv3th6-CjQFLFu05bzaTvR1t7guSp?si=O_gGY63OMG_evCx_",
+        "https://youtube.com/clip/UgkxHPsYqlDYOYkulfyTbnA2OCMNISgYLSAH?si=4WniNs8btkAl4wqr",
+        "https://youtube.com/clip/UgkxYoSOuQNRtGNCAz-_tufn98-SgL89wKqA?si=aCALaKAomWGKkZed",
+        "https://youtube.com/clip/UgkxPLNawXgQsyIyenFV35USpmTvrOBmYaPc?si=5TRnUuPIPPek3CSg",
+        "https://youtube.com/clip/UgkxJPUXBoVD4AiOp-V8jMCkEAeKENCIFuKx?si=mBQ3hgGWh5kgyC1g",
+        "https://youtube.com/clip/Ugkx-ZSGHEXSqwPzLy7-Jl3rffMailpWbgY4?si=q-HoPmWCV-GNrCjo",
+        "https://youtube.com/clip/UgkxPLOBDyK-g53nc6NEiF7ySRL3gHWwZP-G?si=W2knj9tKF-7H7Zsy",
+        "https://youtube.com/clip/Ugkxik6nnYNHIhXVIe2DBkEP2LXtZIHybL5l?si=YsSxTk52qVf_vCwJ",
+        "https://youtube.com/clip/UgkxP8uWWThPcB8nSeu-aV3-tvLzSTwGmcvw?si=1CPBy1NVyKa3iRFJ",
+        "https://youtube.com/clip/UgkxGK6nUTufeFfFhqESbiFpOSD3wLqxTxJd?si=P2RSD7nVLTej1F7T",
+        "https://youtube.com/clip/Ugkx3YwqF8tR99ib6XqyRhTZcZO4MAb3kABn?si=MJTUdZHA2KRa6eAD",
+        "https://youtube.com/clip/Ugkx_9--yFE9FKzx_PPP5m4o5nGpLWKzx89K?si=E9BsfeX5I1Ba2Di6"
+      ];
+
+      document.getElementById("crystalBall").addEventListener("click", function() {
+        const randomUrl = urlList[Math.floor(Math.random() * urlList.length)];
+        window.open(randomUrl, '_blank');
+      });
+    </script>
+  </body>
+  </html>

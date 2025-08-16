@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Deal or No Deal - Suitcases</title>
+<script src="../../assets/session-guard.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+  body {
+    background-color: #111;
+    text-align: center;
+    padding-top: 20px;
+    color: white;
+    font-family: sans-serif;
+    margin: 0;
+    position: relative;
+  }
+  body::before {
+    content: "";
+    position: fixed; top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: url("https://cdn.midjourney.com/ab45435c-36fc-413e-8368-fe012bee2604/0_3.png") no-repeat center center;
+    background-size: cover;
+    opacity: 0.35; z-index: -1;
+  }
+  #superchats {
+    position: fixed;
+    top: 20px; left: 20px;
+    background: rgba(0,0,0,0.7);
+    color: white;
+    padding: 10px;
+    border-radius: 8px;
+    text-align: center;
+    font-size: 18px;
+    font-weight: bold;
+  }
+  h1 {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 60px;
+    margin-bottom: 10px;
+    color: #f8e81a;
+    text-shadow: 0 0 10px #f8e81a, 0 0 20px #fffbc3;
+    letter-spacing: 2px;
+  }
+  #round-info {
+    font-size: 24px;
+    color: #f8e81a;
+    margin: 0 0 20px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(5,1fr);
+    gap: 10px;
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+  .suitcase {
+    position: relative;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  .image-wrapper {
+    position: relative;
+    width: 100px; height: 100px;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.7);
+    transition: box-shadow .3s;
+  }
+  .image-wrapper:hover { box-shadow: 0 0 20px 10px rgba(100,206,232,0.8); }
+  .image-wrapper img { width: 100%; height: 100%; object-fit: cover; }
+  .number-label {
+    position: absolute; top: 25%; left: 10%;
+    background: rgba(0,0,0,0.9);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-size: 20px;
+    font-weight: bold;
+  }
+  .name-label {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    font-size: 20px; color: white;
+    background: #8B0000;
+    padding: 5px 10px; border-radius: 10px;
+    display: none;
+  }
+  #held-case {
+    margin: 20px auto 10px;
+    width: 120px; height: 120px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 20px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .bottom-lists {
+    display: flex; justify-content: center;
+    gap: 10px; margin-top: 20px; flex-wrap: wrap;
+  }
+  .list-container {
+    background: rgba(0,0,0,0.7);
+    padding: 2px 5px; border-radius: 10px;
+    width: 250px; text-align: center;
+  }
+  .list-container h3 { color: #f8e81a; margin: 5px; font-size: 22px; text-decoration: underline; }
+  ul { list-style: none; padding: 0; margin: 0; color: white; font-size: 13px; }
+  li.striked { text-decoration: line-through; color: #888; }
+  .modal-button {
+    margin: 10px; padding: 10px 20px;
+    font-size: 16px; border: none; border-radius: 8px;
+    cursor: pointer; background: #f8e81a; color: black;
+    transition: background .3s;
+  }
+  .modal-button:hover { background: #fff58c; }
+  .modal-close {
+    position: absolute; top: 10px; right: 20px;
+    background: none; border: none; font-size: 24px;
+    cursor: pointer; color: black;
+  }
+  .modal-overlay {
+    display: none; position: fixed; top: 0; left: 0;
+    width: 100%; height: 100%; background: rgba(0,0,0,0.8);
+    align-items: center; justify-content: center; z-index: 1000;
+  }
+  .modal-content {
+    background: #fff; padding: 30px;
+    border-radius: 15px; text-align: center;
+    position: relative; color: black;
+  }
+</style>
+</head>
+<body>
+  <div id="superchats">
+    <div class="list-container">
+      <h3>Superchats</h3>
+      $5 - Adds 5,000 foot soldiers<br>
+      $10 - Closes a case and randomizes all<br>
+      $20 - Forces a case swap<br>
+      $50 - Resets the Game
+    </div>
+  </div>
+  <button id="reset-button" class="modal-button" style="position: fixed; top: 20px; right: 20px;">Reset Game</button>
+  <div id="held-case"></div>
+  <h1>PICK A SUITCASE</h1>
+  <h2 id="round-info">Round 1 - Open 5 Cases (5 left)</h2>
+  <div class="grid" id="suitcase-grid"></div>
+  <div class="bottom-lists">
+    <div class="list-container"><h3>Generals</h3><ul id="generals-list"></ul></div>
+    <div class="list-container"><h3>Captains</h3><ul id="captains-list"></ul></div>
+    <div class="list-container"><h3>Foot Soldiers (5,000)</h3><ul id="footsoldiers-list"></ul></div>
+  </div>
+  <div id="action-modal" class="modal-overlay">
+    <div class="modal-content">
+      <button id="close-button" class="modal-close">&times;</button>
+      <h2 id="modal-title">Suitcase #1 - Choose an action</h2>
+      <button id="hold-button" class="modal-button">Select Case</button>
+      <button id="open-button" class="modal-button">Open Case</button>
+    </div>
+  </div>
+  <div id="confirm-modal" class="modal-overlay">
+    <div class="modal-content">
+      <button id="confirm-close" class="modal-close">&times;</button>
+      <h2 id="confirm-message">Open your selected case?</h2>
+      <div id="confirm-buttons">
+        <button id="confirm-yes" class="modal-button">Yes</button>
+        <button id="confirm-no" class="modal-button">No</button>
+      </div>
+    </div>
+  </div>
+  <div id="reclose-modal" class="modal-overlay">
+    <div class="modal-content">
+      <button id="reclose-close" class="modal-close">&times;</button>
+      <h2>Close this suitcase?</h2>
+      <button id="reclose-yes" class="modal-button">Yes</button>
+      <button id="reclose-no" class="modal-button">No</button>
+    </div>
+  </div>
+<script>
+const rounds=[5,4,4,3,3,2,2,1];
+let currentRound=0, toOpen=rounds[0], opened=0;
+let generals=["Goku","Naruto","One Punch Man","Broly","Dr. Strange"];
+let captains=["Smaug","Darth Vader","Optimus Prime","Shrek","Iron Man","Minecraft Steve","Gandalf","Titan from AOT","Geralt","Bowser","Captain America","Kratos","Toad"];
+let footsoldiers=["Clone Trooper","Battle Droid","Space Marine","Uruk-Hai","Tyranid Warriors","Orcs","White Walkers"];
+let all=[...generals,...captains,...footsoldiers];
+let assignments=[...all].sort(()=>Math.random()-.5);
+let states=Array(25).fill(false);
+
+const grid=document.getElementById('suitcase-grid'),
+      held=document.getElementById('held-case'),
+      roundInfo=document.getElementById('round-info'),
+      actionModal=document.getElementById('action-modal'),
+      confirmModal=document.getElementById('confirm-modal'),
+      recloseModal=document.getElementById('reclose-modal'),
+      modalTitle=document.getElementById('modal-title'),
+      holdBtn=document.getElementById('hold-button'),
+      openBtn=document.getElementById('open-button'),
+      closeX=document.getElementById('close-button'),
+      confirmClose=document.getElementById('confirm-close'),
+      confirmMsg=document.getElementById('confirm-message'),
+      confirmBtns=document.getElementById('confirm-buttons'),
+      confirmYes=document.getElementById('confirm-yes'),
+      confirmNo=document.getElementById('confirm-no'),
+      recloseYes=document.getElementById('reclose-yes'),
+      recloseNo=document.getElementById('reclose-no'),
+      recloseClose=document.getElementById('reclose-close'),
+      resetBtn=document.getElementById('reset-button');
+
+function updateRound(){
+  const left = toOpen - opened;
+  roundInfo.textContent = `Round ${currentRound+1} - Open ${toOpen} Cases (${left} left)`;
+}
+updateRound();
+
+function strike(n){
+  document.getElementById(`name-${n.replace(/\s+/g,'-')}`).classList.add('striked');
+}
+function unstrike(n){
+  document.getElementById(`name-${n.replace(/\s+/g,'-')}`).classList.remove('striked');
+}
+
+function reshuffle(){
+  const closed = states.map((s,i)=>!s? i : null).filter(i=>i!==null);
+  const vals = closed.map(i=> assignments[i]).sort(()=>Math.random()-.5);
+  closed.forEach((i,idx)=>{
+    assignments[i] = vals[idx];
+    document.getElementById(`name-${i}`).textContent = vals[idx];
+  });
+}
+
+function fillList(arr,id){
+  arr.forEach(n=>{
+    const li = document.createElement('li');
+    li.id = `name-${n.replace(/\s+/g,'-')}`;
+    li.textContent = n;
+    document.getElementById(id).appendChild(li);
+  });
+}
+fillList(generals,'generals-list');
+fillList(captains,'captains-list');
+fillList(footsoldiers,'footsoldiers-list');
+
+let heldIdx=null, selIdx=null;
+for(let i=0;i<25;i++){
+  const d = document.createElement('div');
+  d.className = 'suitcase'; d.dataset.i = i;
+  d.innerHTML = `
+    <div class="image-wrapper">
+      <img src="https://imgur.com/VU0KznW.png" id="img-${i}">
+      <div class="number-label">${i+1}</div>
+      <div class="name-label" id="name-${i}">${assignments[i]}</div>
+    </div>`;
+  d.onclick = ()=>{
+    selIdx = i;
+    if(states[i]){
+      recloseModal.style.display = 'flex';
+    } else {
+      modalTitle.textContent = `Suitcase #${i+1} - Choose an action`;
+      holdBtn.textContent = heldIdx===null ? 'Select Case' : 'Swap Case';
+      document.querySelector(`[data-i='${i}'] .number-label`).style.display = 'none';
+      actionModal.style.display = 'flex';
+    }
+  };
+  grid.appendChild(d);
+}
+
+holdBtn.onclick = ()=>{
+  if(heldIdx!==null){
+    const prev = document.querySelector(`[data-i='${heldIdx}']`);
+    prev.style.visibility = 'visible';
+    const prevNum = prev.querySelector('.number-label');
+    if(prevNum) prevNum.style.display = 'block';
+  }
+  const curr = document.querySelector(`[data-i='${selIdx}']`);
+  curr.style.visibility = 'hidden';
+  held.innerHTML = `
+    <div class="image-wrapper" style="width:120px;height:120px;">
+      <img src="https://imgur.com/VU0KznW.png">
+      <div class="number-label">${selIdx+1}</div>
+    </div>`;
+  heldIdx = selIdx;
+  actionModal.style.display = 'none';
+};
+
+openBtn.onclick = ()=>{
+  const img = document.getElementById(`img-${selIdx}`),
+        lbl = document.getElementById(`name-${selIdx}`);
+  img.src = "https://imgur.com/j4FSWX4.png";
+  lbl.style.display = 'block';
+  strike(assignments[selIdx]);
+  states[selIdx] = true;
+  opened++;
+  if(opened >= toOpen){
+    currentRound++;
+    opened = 0;
+    toOpen = rounds[currentRound] || 1;
+  }
+  updateRound();
+  actionModal.style.display = 'none';
+};
+
+closeX.onclick = ()=> actionModal.style.display = 'none';
+resetBtn.onclick = ()=> location.reload();
+
+held.onclick = ()=>{
+  if(heldIdx !== null) confirmModal.style.display = 'flex';
+};
+
+confirmYes.onclick = ()=>{
+  confirmMsg.textContent = `Your case contains: ${assignments[heldIdx]}!`;
+  confirmBtns.innerHTML = '<button id="confirm-ok" class="modal-button">OK</button>';
+  document.getElementById('confirm-ok').onclick = ()=> confirmModal.style.display = 'none';
+};
+confirmNo.onclick = ()=> confirmModal.style.display = 'none';
+confirmClose.onclick = ()=> confirmModal.style.display = 'none';
+
+recloseYes.onclick = ()=>{
+  states[selIdx] = false;
+  const img = document.getElementById(`img-${selIdx}`),
+        lbl = document.getElementById(`name-${selIdx}`),
+        numLbl = document.querySelector(`[data-i='${selIdx}'] .number-label`);
+  img.src = "https://imgur.com/VU0KznW.png";
+  lbl.style.display = 'none';
+  if(numLbl) numLbl.style.display = 'block';
+  unstrike(assignments[selIdx]);
+  // decrement opened count
+  opened = Math.max(0, opened - 1);
+  updateRound();
+  reshuffle();
+  recloseModal.style.display = 'none';
+};
+recloseNo.onclick = ()=> recloseModal.style.display = 'none';
+recloseClose.onclick = ()=> recloseModal.style.display = 'none';
+</script>
+</body>
+</html>

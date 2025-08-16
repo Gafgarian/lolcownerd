@@ -1,55 +1,46 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LolcowNerd Applications</title>
-  <style>
-    body {
-      background-color: #111;
-      color: #f8e81a;
-      font-family: 'futura', sans-serif;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      margin: 0;
-    }
-    h1 {
-      font-size: 4rem;
-      margin-bottom: 2rem;
-    }
-    img {
-      max-width: 300px;
-      margin-bottom: 2rem;
-    }
-    a {
-      display: inline-block;
-      margin: 0.5rem;
-      padding: 1rem 2rem;
-      background: #f8e81a;
-      color: #111;
-      text-decoration: none;
-      font-size: 1.5rem;
-      border-radius: 10px;
-      transition: background 0.3s;
-    }
-    a:hover {
-      background: #fff58c;
-    }
-  </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LOLCOW NERD — Terminal Access</title>
+  <link rel="stylesheet" href="assets/retro.css" />
+  <!-- If a valid session already exists, jump to the app -->
+  <script src="assets/session-guard.js"></script>
 </head>
 <body>
-  <img src="https://imgur.com/lgEMnrm.jpg" alt="Centered Image">
-  <h1>Applications</h1>
-  <nav>
-    <a href="jump.html">Nerds Can't Jump</a>
-    <a href="voting/voting.html">Nerds Voting</a>    
-    <a href="slice/index.html">Slice a B*tch</a>
-    <a href="deal.html">Deal or No Deal</a>
-    <a href="dragonball.html">Dragon Ball Radar</a>
-    <a href="hunger.html">Lolcow Hunger Games</a>
-  </nav>
+  <!-- Hidden real input; we echo asterisks into the visible terminal -->
+  <input id="secretInput" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" />
+
+  <main class="crt">
+    <div class="bezel">
+      <div class="screen" id="screen" aria-live="polite">
+        <pre class="lines" id="lines">
+LOLCOW NERD :: SECURE ACCESS NODE v0.9
+--------------------------------------
+Initializing...
+Routing to NERDS terminal...
+
+<span class="dim">Now accessing:</span> <span class="bright">Nerds Defense Force // Field Console</span>
+
+Enter passcode to continue.
+
+&gt; <span id="echo"></span><span class="cursor">█</span>
+        </pre>
+
+        <!-- boot/progress shown after success -->
+        <div id="boot" class="boot hidden" role="status" aria-live="polite">
+          ACCESS GRANTED
+          <div class="bar"><span id="barFill"></span></div>
+          <div class="tiny" id="bootMsg">Mounting subsystems…</div>
+        </div>
+
+        <!-- failure toast -->
+        <div id="deny" class="deny hidden" role="alert">ACCESS DENIED</div>
+      </div>
+    </div>
+  </main>
+
+  <script src="assets/retro.js"></script>
 </body>
 </html>
