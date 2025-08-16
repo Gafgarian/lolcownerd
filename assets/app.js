@@ -327,8 +327,8 @@ document.getElementById('zoomOut').addEventListener('click', (e)=> setZoom(zoom-
 /* ---------- Table items ---------- */
 const ITEMS = [
   { id:'apps',    title:'Applications', text:'Open NDF apps & games.',       type:'envelope' },
-  { id:'missions',title:'NDF Missions', text:'Operations & mission briefs.', type:'envelope' },
-  { id:'segments',title:'Segments',     text:'On-show segment controls.',    type:'envelope' },
+  { id:'missions',title:'NDF Missions (Coming Soon)', text:'Operations & mission briefs.', type:'envelope' },
+  { id:'segments',title:'Segments',     text:'On-show segments.',    type:'envelope' },
 ];
 const itemsGrid = document.getElementById('itemsGrid');
 
@@ -352,19 +352,17 @@ function openItem(item){
     document.getElementById('fileBody').innerHTML = appsListHTML();
   }else if(item.id==='missions'){
     document.getElementById('fileBody').innerHTML = `
-      <p>Mission dossiers (coming online):</p>
+      <p>Mission dossiers:</p>
       <ul style="margin:0; padding-left:18px; line-height:1.6">
-        <li>Operation Greenlight</li>
-        <li>Battlefront LIVE</li>
-        <li>Cope Convoy</li>
       </ul>`;
   }else if(item.id==='segments'){
     document.getElementById('fileBody').innerHTML = `
-      <p>Segment controllers (links TBD):</p>
+      <p>Segment controllers:</p>
       <ul style="margin:0; padding-left:18px; line-height:1.6">
-        <li>Intel Board</li>
-        <li>Troll Hunter</li>
-        <li>Wizards of the Grift</li>
+        <li>Lore-ology</li>
+        <li>Nerdsfari</li>
+        <li>Weeb's Anime Corner</li>      
+        <li>Fuck Math</li>
       </ul>`;
   }
   document.getElementById('fileModal').classList.add('show');
