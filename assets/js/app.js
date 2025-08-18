@@ -59,7 +59,7 @@ function drawMap(){
   if(!MAP_IMG){
     MAP_IMG = new Image();
     MAP_IMG.onload = draw;
-    MAP_IMG.src = 'assets/ndf_map.png';
+    MAP_IMG.src = 'assets/images/ndf_map.png';
   }else{
     draw();
   }
@@ -85,9 +85,9 @@ window.addEventListener('keydown', (e)=>{
 
 /* ---------- Icon registry attached to hex IDs ---------- */
 const HEX_ICONS = {
-  1: { src: 'assets/icons/ndfHQ.png', title: 'Nerds Defense Force HQ', alt:'NDF HQ' },
+  1: { src: 'assets/images/icons/ndfHQ.png', title: 'Nerds Defense Force HQ', alt:'NDF HQ' },
   // Add more like:
-  // 42: { src: 'assets/icons/someIcon.png', title: 'Something Here', alt:'Something' }
+  // 42: { src: 'assets/images/icons/someIcon.png', title: 'Something Here', alt:'Something' }
 };
 
 /* ---------- Hex grid ---------- */
@@ -370,13 +370,13 @@ function openItem(item){
 
 function appsListHTML(){
   const apps = [
-    {slug:'balls',  label:'Balls'},
-    {slug:'becky',  label:'Becky'},
-    {slug:'deal',   label:'Deal'},
-    {slug:'hunger', label:'Hunger'},
-    {slug:'jump',   label:'Jump'},
-    {slug:'slice',  label:'Slice'},
-    {slug:'voting', label:'Voting'},
+    {slug:'balls',  label:'Dragonball Scanner'},
+    {slug:'becky',  label:'Becky Ball'},
+    {slug:'deal',   label:'Deal or no Deal'},
+    {slug:'hunger', label:'Hunger Games'},
+    {slug:'jump',   label:"Nerds Can't Jump"},
+    {slug:'slice',  label:'Trim the Fats'},
+    {slug:'voting', label:'Voting Machine'},
   ];
   const rows = apps.map(a=>`<li><a href="apps/${a.slug}/${a.slug}.html">${a.label}</a></li>`).join('');
   return `<p>Choose an application:</p>
@@ -396,3 +396,4 @@ function updateProgress(){
 function build(){ drawMap(); buildHex(); applyTransform(); }
 build();
 let rTO; window.addEventListener('resize', ()=>{ clearTimeout(rTO); rTO = setTimeout(()=>{ drawMap(); placeHQIcon(); applyTransform(); }, 120); });
+
