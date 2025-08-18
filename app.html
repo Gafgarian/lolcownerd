@@ -4,18 +4,18 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>NDF War Table — HQ</title>
-  <link rel="stylesheet" href="assets/styles.css" />
-  <script src="assets/session-guard.js"></script>
+  <link rel="stylesheet" href="assets/css/styles.css" />
+  <script src="assets/js/session-guard.js"></script>
 </head>
 <body>
   <div class="tent-weave"></div>
 
   <!-- Banner -->
-  <img class="banner" src="assets/nerdsBanner.png" alt="Nerds banner" />
+  <img class="banner" src="assets/images/nerdsBanner.png" alt="Nerds banner" />
 
   <!-- Map + frame (now sized by aspect-ratio so interior exists at load) -->
   <section class="map-frame">
-    <img class="frame-art" src="assets/ndf_frame.png" alt="" aria-hidden="true"/>
+    <img class="frame-art" src="assets/images/ndf_frame.png" alt="" aria-hidden="true"/>
 
     <!-- Progress pill overlaps the frame edge -->
     <div class="groove">
@@ -33,7 +33,7 @@
         <canvas id="mapCanvas" aria-hidden="true"></canvas>
         <canvas id="magCanvas" aria-hidden="true"></canvas>
         <svg class="hex-overlay" id="hexSvg" viewBox="0 0 1000 562.5" preserveAspectRatio="none"></svg>
-        <img id="ndfIcon" class="ndf-hq" src="assets/icons/ndfHQ.png" alt="NDF HQ"/>
+        <img id="ndfIcon" class="ndf-hq" src="assets/images/icons/ndfHQ.png" alt="NDF HQ"/>
       </div>
       <div class="fog"></div>
     </div>
@@ -80,6 +80,6 @@
     </div>
   </div>
 
-  <script src="assets/app.js"></script>
+  <script src="assets/js/app.js"></script>
 </body>
 </html>
