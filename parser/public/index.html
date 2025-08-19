@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>YT Live Chat Scraper</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root{
+      --bg:#0b0f0f; --panel:#0c1313; --panel2:#0e1414; --line:#133;
+      --ink:#e7f6f2; --ink-dim:#9fbfbb;
+      /* YT tier colors */
+      --sc-blue:#1d4ed8;
+      --sc-lblue:#06b6d4;
+      --sc-green:#10b981;
+      --sc-yellow:#f59e0b;
+      --sc-orange:#f97316;
+      --sc-pink:#ec4899;
+      --sc-red:#ef4444;
+    }
+    *{box-sizing:border-box}
+    body{font-family:ui-monospace,Menlo,Consolas,monospace;background:var(--bg);color:var(--ink);margin:0}
+    .wrap{max-width:1100px;margin:0 auto}
+    .bar{padding:12px 16px;border-bottom:1px solid var(--line)}
+    .bar.totals{background:var(--panel)}
+    .bar.controls{background:var(--panel2);position:sticky;top:0;z-index:5}
+    .pill{display:inline-block;margin-right:12px;padding:6px 10px;border:1px solid #2a8;border-radius:999px;background:#0b1f1f;color:#9ff}
+    .row{display:flex;gap:10px;align-items:flex-start}
+    main{display:grid;gap:12px;padding:16px}
+    .msg{background:#0c1414;border:1px solid #163;border-radius:8px;padding:10px 12px;white-space:pre-wrap}
+    .who{color:#8ff;min-width:220px;font-weight:600}
+    .status{opacity:.75;font-style:italic}
+
+    /* Input + buttons */
+    input[type=text]{width:70%;max-width:720px;padding:10px 12px;border-radius:6px;border:1px solid #255;background:#0b1212;color:#cfe}
+    button{margin-left:8px;padding:10px 14px;border-radius:6px;border:1px solid #2a8;background:#0b1f1f;color:#9ff;cursor:pointer}
+    button:hover{background:#0f2a2a}
+
+    /* Superchat colored chips (for message rows) */
+    .sc-chip{color:#001;font-weight:700;padding:2px 6px;border-radius:6px;display:inline-block;margin-right:6px}
+    .sc-blue   {background:var(--sc-blue);   border-color:var(--sc-blue);}
+    .sc-lblue  {background:var(--sc-lblue);  border-color:var(--sc-lblue);}
+    .sc-green  {background:var(--sc-green);  border-color:var(--sc-green);}
+    .sc-yellow {background:var(--sc-yellow); border-color:var(--sc-yellow);}
+    .sc-orange {background:var(--sc-orange); border-color:var(--sc-orange);}
+    .sc-pink   {background:var(--sc-pink);   border-color:var(--sc-pink);}
+    .sc-red    {background:var(--sc-red);    border-color:var(--sc-red);}
+
+    /* Minimal “logging” counters line (text only, color-coded) */
+    .tiers{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+    .tiers .lbl{color:var(--ink-dim);margin-right:8px}
+    .t-blue   {color:var(--sc-blue)}
+    .t-lblue  {color:var(--sc-lblue)}
+    .t-green  {color:var(--sc-green)}
+    .t-yellow {color:var(--sc-yellow)}
+    .t-orange {color:var(--sc-orange)}
+    .t-pink   {color:var(--sc-pink)}
+    .t-red    {color:var(--sc-red)}
+  </style>
+</head>
+<body>
+  <!-- Totals bar -->
+  <div class="bar totals">
+    <div class="wrap">
+      <span class="pill">💠 Super Chats: <b id="totalSC">$0.00</b></span>
+      <span class="pill">🎁 Gifted Members: <b id="totalGifts">0</b></span>
+    </div>
+  </div>
+
+  <!-- Minimal, color-coded counts per tier -->
+  <div class="bar totals" aria-hidden="true">
+    <div class="wrap tiers">
+      <span class="lbl">SC by tier:</span>
+      <span class="t-blue">Blue <b id="cBlue">0</b></span>
+      <span class="t-lblue">Light-blue <b id="cLBlue">0</b></span>
+      <span class="t-green">Green <b id="cGreen">0</b></span>
+      <span class="t-yellow">Yellow <b id="cYellow">0</b></span>
+      <span class="t-orange">Orange <b id="cOrange">0</b></span>
+      <span class="t-pink">Pink <b id="cPink">0</b></span>
+      <span class="t-red">Red <b id="cRed">0</b></span>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="bar controls">
+    <div class="wrap">
+      <input id="ytUrl" type="text" placeholder="Paste a YouTube watch URL (live or VOD w/ replay)" />
+      <button id="startBtn">Sync</button>
+      <button id="stopBtn">Stop</button>
+    </div>
+  </div>
+
+  <div class="bar" style="background:#0c1518">
+    <div class="wrap" style="display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center">
+      <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">🎬 <b id="metaTitle">—</b></div>
+      <div class="pill">👀 Viewers: <b id="metaViewers">—</b></div>
+    </div>
+  </div>
+
+  <main id="feed" class="wrap"></main>
+
+  <!-- Optional: set this to your remote parser origin on production -->
+  <script>
+    // window.PARSER_ORIGIN = 'https://your-parser.example.com';
+  </script>
+  <script src="client.js"></script>
+</body>
+</html>

@@ -1,85 +1,141 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>NDF War Table — HQ</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <!-- Change this per environment: localhost for dev, your deployed parser origin in prod -->
+  <meta name="nerds-parser-origin" content="http://localhost:8080" />
+
+  <title>NDF Field Console</title>
+
+  <!-- App styles -->
   <link rel="stylesheet" href="assets/css/styles.css" />
+
+  <!-- Session guard first: blocks direct access without session -->
   <script src="assets/js/session-guard.js"></script>
 </head>
 <body>
-  <div class="tent-weave"></div>
 
-  <!-- Banner -->
-  <img class="banner" src="assets/images/nerdsBanner.png" alt="Nerds banner" />
+  <div class="tent-weave" aria-hidden="true"></div>
 
-  <!-- Map + frame (now sized by aspect-ratio so interior exists at load) -->
-  <section class="map-frame">
-    <img class="frame-art" src="assets/images/ndf_frame.png" alt="" aria-hidden="true"/>
+  <!-- ===== Banner (static art) ===== -->
+  <img class="banner" src="assets/images/nerdsBanner.jpg" alt="Nerds banner" />
 
-    <!-- Progress pill overlaps the frame edge -->
-    <div class="groove">
+  <!-- ===== Map + frame (below banner) ===== -->
+  <section class="map-frame" id="mapViewport" aria-label="Campaign Map">
+
+    <!-- Progress pill that overlaps the inner top edge of frame -->
+    <div class="groove" role="status" aria-live="polite">
       <div class="rail">
         <div class="chip">
-          <div class="title" id="progLabel">Campaign Progress — 0.0%</div>
-          <div class="bar"><div id="progFill" class="fill" style="width:0%"></div></div>
+          <div class="title" id="progLabel">Campaign Progress — 0%</div>
+          <div class="bar"><div class="fill" id="progFill" style="width:0%"></div></div>
         </div>
       </div>
     </div>
 
-    <!-- Interior window (map fills and is clipped here) -->
-    <div class="map-window" id="mapViewport" aria-label="Map window">
+    <!-- Frame artwork sits above map to hide edges -->
+    <img class="frame-art" src="assets/images/ndf_frame.png" alt="" aria-hidden="true" />
+
+    <!-- Interior window: anything inside is clipped by the frame -->
+    <div class="map-window" id="mapWindow">
       <div id="mapContent">
-        <canvas id="mapCanvas" aria-hidden="true"></canvas>
-        <canvas id="magCanvas" aria-hidden="true"></canvas>
-        <svg class="hex-overlay" id="hexSvg" viewBox="0 0 1000 562.5" preserveAspectRatio="none"></svg>
-        <img id="ndfIcon" class="ndf-hq" src="assets/images/icons/ndfHQ.png" alt="NDF HQ"/>
+        <canvas id="mapCanvas"></canvas>
+        <canvas id="magCanvas"></canvas>
+        <svg id="hexSvg" class="hex-overlay" viewBox="0 0 1000 562.5" preserveAspectRatio="none"></svg>
       </div>
-      <div class="fog"></div>
+
+      <!-- HQ icon (pinned in JS) -->
+      <img id="ndfIcon" class="ndf-hq" src="assets/images/icons/ndfHQ.png" alt="NDF HQ" />
     </div>
 
-    <!-- Zoom controls on the frame -->
-    <div class="zoom-wrap">
+    <!-- Zoom controls -->
+    <div class="zoom-wrap" aria-label="Zoom controls">
       <button id="zoomIn"  class="zoom-btn" aria-label="Zoom in">+</button>
       <button id="zoomOut" class="zoom-btn" aria-label="Zoom out">−</button>
     </div>
   </section>
 
-  <!-- Sliding table above the frame -->
-  <section class="table-wrap">
+  <!-- ===== Tooltip ===== -->
+  <div id="tooltip" class="tip" role="tooltip"></div>
+
+  <!-- Slide-up "folders" table -->
+  <div class="table-wrap">
     <div class="table">
       <div class="felt">
-        <div class="items" id="itemsGrid"></div>
-      </div>
-    </div>
-  </section>
-
-  <div class="tip" id="tooltip"></div>
-
-  <!-- Generic modal -->
-  <div class="modal-backdrop" id="modal">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modaltitle">
-      <h4 id="modaltitle">Hex Selected</h4>
-      <p id="modalcontent">You clicked hex <strong>#0</strong>.</p>
-      <div class="actions">
-        <button class="btn" id="closeBtn">Close</button>
-        <button class="btn yellow" id="confirmBtn">OK</button>
+        <div id="itemsGrid" class="items"></div>
       </div>
     </div>
   </div>
 
-  <!-- File-styled modal for desk items -->
-  <div class="file-backdrop" id="fileModal">
-    <div class="file-modal" role="dialog" aria-modal="true" aria-labelledby="fileTitle">
-      <div class="file-tab" id="fileTab">APPS</div>
+  <!-- Tooltip -->
+  <div id="tooltip" class="tip" role="tooltip"></div>
+
+  <!-- Generic info modal (opened from hex clicks or folder content) -->
+  <div id="modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modaltitle">
+    <div class="modal">
+      <h4 id="modaltitle">Modal</h4>
+      <div id="modalcontent" class="content">…</div>
+      <div class="actions">
+        <button class="btn" data-close>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- File / “Applications” modal -->
+  <div id="fileBackdrop" class="file-backdrop" role="dialog" aria-modal="true" aria-labelledby="fileTitle">
+    <div id="fileModal" class="file-modal" role="document">
+      <div id="fileTab" class="file-tab">APPLICATIONS</div>
+      <button id="fileClose" class="file-close" aria-label="Close">✕</button>
       <div class="file-paper">
         <h4 id="fileTitle">Applications</h4>
         <div id="fileBody"></div>
       </div>
-      <button class="file-close" id="fileClose" aria-label="Close">✕</button>
     </div>
   </div>
 
-  <script src="assets/js/app.js"></script>
+  <!-- Admin toggle button (hamburger) -->
+  <button id="adminToggle" class="admin-toggle" aria-label="Open admin panel" aria-expanded="false">
+    <span class="burger" aria-hidden="true"></span>
+  </button>
+
+  <!-- Admin slide-out -->
+  <aside id="adminPanel" class="admin-panel" aria-hidden="true">
+    <div class="admin-head">
+      <h3>Admin</h3>
+      <button id="btnLogout" class="btn danger btn-small" title="Logout">Logout</button>
+    </div>
+
+    <div class="admin-section">
+      <div class="row">
+        <button id="btnLink" class="btn yellow btn-small">Link stream</button>
+        <span id="linkState" class="muted">No stream linked</span>
+      </div>
+      <pre id="adminLog" class="admin-log" aria-live="polite"></pre>
+
+      <!-- Message type counters -->
+      <ul id="msgStats" class="msg-stats" aria-live="polite">
+        <li><span>Viewers</span> <strong id="statViewers">0</strong></li>
+        <li><span>Superchats</span> <strong id="statSuperchat">0</strong></li>
+        <li><span>Gifted members</span> <strong id="statGifted">0</strong></li>
+        <li><span>New memberships</span> <strong id="statMembership">0</strong></li>
+      </ul>
+    </div>
+  </aside>
+
+  <!-- Link Stream Modal -->
+  <div id="linkBackdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="linkTitle">
+    <div class="modal" role="document">
+      <h4 id="linkTitle">Link a live stream</h4>
+      <p>Paste a YouTube <code>live/watch</code> URL to start pulling chat metadata via your parser.</p>
+      <input id="streamUrl" class="input" type="url" inputmode="url" placeholder="https://www.youtube.com/watch?v=…" />
+      <div class="actions">
+        <button id="linkCancel" class="btn">Cancel</button>
+        <button id="linkSave" class="btn yellow">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/js/app.js" defer></script>
 </body>
 </html>
