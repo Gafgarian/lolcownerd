@@ -1,6 +1,32 @@
 import express from 'express';
 import cors from 'cors';
 import { nanoid } from 'nanoid';
+
+// helpful crash logs
+process.on('unhandledRejection', e => console.error('[unhandledRejection]', e));
+process.on('uncaughtException', e => console.error('[uncaughtException]', e));
+
+/** Active sessions: id -> { browser, page, watchPage, sinks:Set<res>, videoId, meta, metaTimer } */
+const sessions = new Map();
+
+// 🔹 detached starter: do NOT await startSession here
+async function startSessionDetached(url) {
+  const id = nanoid();
+  // seed session record so /events works even if start is still warming up
+  sessions.set(id, { browser:null, page:null, watchPage:null, sinks:new Set(), videoId:null, meta:{}, metaTimer:null });
+
+  // kick off the heavy work in the background
+  startSession(url, id).then(() => {
+    console.log('[session %s] ready', id);
+  }).catch(err => {
+    console.error('[session %s] failed', id, err);
+    const s = sessions.get(id);
+    if (s) s.error = err?.message || String(err);
+  });
+
+  return id;
+}
+
 import { chromium } from 'playwright';
 
 const app = express();
@@ -8,8 +34,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-/** Active sessions: id -> { browser, page, watchPage, sinks:Set<res>, videoId, meta, metaTimer } */
-const sessions = new Map();
+
 
 /* -------------------------- helpers & enrichment -------------------------- */
 
@@ -156,8 +181,8 @@ function enrichAndFilter(raw, videoId) {
 
 /* ---------------------------- playwright session --------------------------- */
 
-async function startSession(url) {
-  const id = nanoid();
+async function startSession(url, idArg) {
+  const id = idArg || nanoid();
   const { live, replay, watch, videoId } = toPopoutUrl(url);
 
   const browser = await chromium.launch({ headless: true });
@@ -402,11 +427,13 @@ app.post('/start', async (req, res) => {
   try {
     const { url } = req.body || {};
     if (!url) return res.status(400).json({ error: 'Missing url' });
-    const sessionId = await startSession(url);
-    res.json({ sessionId });
+
+    console.log('[POST /start] url=', url);
+    const sessionId = await startSessionDetached(url); // respond immediately
+    return res.json({ sessionId });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'failed_to_start' });
+    console.error('[POST /start] error:', e);
+    return res.status(500).json({ error: 'failed_to_start', reason: e?.message || String(e) });
   }
 });
 
@@ -418,32 +445,19 @@ app.get('/events/:id', (req, res) => {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
     'Connection': 'keep-alive',
-    'X-Accel-Buffering': 'no' // avoid proxy buffering
+    'X-Accel-Buffering': 'no'
   });
-  // Ensure headers go out now (Express/Node sometimes buffers).
   res.flushHeaders?.();
+  res.write('retry: 5000\n\n');            // let EventSource auto-retry
 
-  // Tell EventSource how long to wait before reconnects (5s)
-  res.write('retry: 5000\n\n');
-
-  // Initial payloads
-  res.write(`data: ${JSON.stringify({ type: 'Connection Established', id: req.params.id, videoId: s.videoId })}\n\n`);
+  res.write(`data: ${JSON.stringify({ type:'Connection Established', id:req.params.id, videoId: s.videoId })}\n\n`);
   if (s.meta && (s.meta.title || s.meta.viewers !== undefined)) {
     res.write(`data: ${JSON.stringify({ type:'meta', at: Date.now(), videoId: s.videoId, ...s.meta })}\n\n`);
   }
 
-  // Heartbeat to keep Render/browsers happy
-  const hb = setInterval(() => {
-    // comment line per SSE spec – keeps the connection warm
-    res.write(':\n\n');
-  }, 15000);
-
-  // Track sink + its heartbeat
+  const hb = setInterval(() => res.write(':\n\n'), 15000); // heartbeat
   s.sinks.add(res);
-  req.on('close', () => {
-    clearInterval(hb);
-    s.sinks.delete(res);
-  });
+  req.on('close', () => { clearInterval(hb); s.sinks.delete(res); });
 });
 
 app.post('/stop/:id', async (req, res) => {
