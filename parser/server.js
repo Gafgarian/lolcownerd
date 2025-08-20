@@ -413,19 +413,37 @@ app.post('/start', async (req, res) => {
 app.get('/events/:id', (req, res) => {
   const s = sessions.get(req.params.id);
   if (!s) return res.status(404).end();
+
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no'
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no' // avoid proxy buffering
   });
-  res.write(`data: ${JSON.stringify({ type:'Connection Established', id:req.params.id, videoId: s.videoId })}\n\n`);
-  // send current meta snapshot immediately
+  // Ensure headers go out now (Express/Node sometimes buffers).
+  res.flushHeaders?.();
+
+  // Tell EventSource how long to wait before reconnects (5s)
+  res.write('retry: 5000\n\n');
+
+  // Initial payloads
+  res.write(`data: ${JSON.stringify({ type: 'Connection Established', id: req.params.id, videoId: s.videoId })}\n\n`);
   if (s.meta && (s.meta.title || s.meta.viewers !== undefined)) {
     res.write(`data: ${JSON.stringify({ type:'meta', at: Date.now(), videoId: s.videoId, ...s.meta })}\n\n`);
-  }  
+  }
+
+  // Heartbeat to keep Render/browsers happy
+  const hb = setInterval(() => {
+    // comment line per SSE spec – keeps the connection warm
+    res.write(':\n\n');
+  }, 15000);
+
+  // Track sink + its heartbeat
   s.sinks.add(res);
-  req.on('close', () => s.sinks.delete(res));
+  req.on('close', () => {
+    clearInterval(hb);
+    s.sinks.delete(res);
+  });
 });
 
 app.post('/stop/:id', async (req, res) => {

@@ -197,7 +197,11 @@ async function start(){
     }catch(err){ row(`• parse error: ${escapeHTML(err.message)}`,'status'); }
   };
 
-  es.onerror = ()=>{ row('• event stream disconnected','status'); es?.close(); };
+  es.onerror = (e) => {
+    // Log it but let EventSource auto-reconnect.
+    row('• stream hiccup — retrying…','status');
+    // DO NOT call es.close() here.
+  };
 }
 
 async function stop(){
