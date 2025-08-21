@@ -27,6 +27,7 @@ let es = null, sessionId = null;
 let totalSC = 0;
 let totalGifts = 0;
 const tierCounters = { blue:0, lblue:0, green:0, yellow:0, orange:0, pink:0, red:0 };
+let lastMeta = { title: undefined, viewers: undefined }; // <-- track last shown
 
 // ===== helpers =====
 function escapeHTML(s=''){return s.replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -67,10 +68,17 @@ function updateTotals(){
 function resetAll(){
   totalSC = 0; totalGifts = 0;
   Object.keys(tierCounters).forEach(k => tierCounters[k]=0);
+  lastMeta = { title: undefined, viewers: undefined };       // <-- reset
   if (metaTitleEl)   metaTitleEl.textContent   = '—';
   if (metaViewersEl) metaViewersEl.textContent = '—';
   updateTotals();
   feed.innerHTML = '';
+}
+
+// small helpers to disable/enable buttons during a run
+function setBusy(b){
+  startBtn.disabled = b;
+  stopBtn.disabled  = !b;
 }
 
 /* ------------------------------- lifecycle -------------------------------- */
@@ -80,23 +88,40 @@ async function start(){
   if(!url) return alert('Paste a YouTube URL first.');
 
   resetAll();
+  setBusy(true);
 
   if (es) { es.close(); es=null; }
   if (sessionId) { try{ await fetch(`${PARSER_ORIGIN}/stop/${sessionId}`,{method:'POST'}) }catch{}; sessionId=null; }
 
-  const res = await fetch(`${PARSER_ORIGIN}/start`,{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({url})
-  });
-  const json = await res.json().catch(()=>({}));
+  let res, json;
+  try{
+    res  = await fetch(`${PARSER_ORIGIN}/start`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({url})
+    });
+    json = await res.json().catch(()=>({}));
+  }catch(err){
+    row(`⚠️ Network error: ${escapeHTML(err.message)}`,'status');
+    setBusy(false);
+    return;
+  }
+
+  // Better errors for common cases (429 etc.)
   if(!res.ok || !json.sessionId){
-    return row(`⚠️ Failed to start: ${escapeHTML(JSON.stringify(json))}`,'status');
+    if (res && res.status === 429 && json?.error === 'too_many_sessions') {
+      row('⚠️ Service is already scraping one video. Stop that session first.','status');
+    } else {
+      row(`⚠️ Failed to start: ${escapeHTML(JSON.stringify(json))}`,'status');
+    }
+    setBusy(false);
+    return;
   }
 
   sessionId = json.sessionId;
   es = new EventSource(`${PARSER_ORIGIN}/events/${sessionId}`);
 
+  es.onopen = () => row('• connected','status');             // <-- visibility
   es.onmessage = (e)=>{
     try{
       const d = JSON.parse(e.data);
@@ -109,25 +134,29 @@ async function start(){
       }
 
       if (d.type === 'meta') {
-        if (metaTitleEl && d.title)   metaTitleEl.textContent = d.title;
+        // Only update UI if values actually changed (prevents flicker).
+        if (metaTitleEl && d.title && d.title !== lastMeta.title) {
+          metaTitleEl.textContent = d.title;
+          lastMeta.title = d.title;
+        }
         if (metaViewersEl && d.viewers !== undefined && d.viewers !== null && d.viewers !== '') {
           const n = Number(d.viewers);
-          metaViewersEl.textContent = Number.isFinite(n) ? n.toLocaleString() : '—';
+          const val = Number.isFinite(n) ? n.toLocaleString() : '—';
+          if (val !== metaViewersEl.textContent) {
+            metaViewersEl.textContent = val;
+            lastMeta.viewers = n;
+          }
         }
         return;
       }
 
       if (d.type === 'superchat') {
-        // Already filtered + enriched server-side
         totalSC += Number(d.amountFloat || 0);
-
-        // Counters still keyed by server-provided tier (derived from YT color)
         const tier = d.tier || 'blue';
         tierCounters[tier] = (tierCounters[tier] || 0) + 1;
         updateTotals();
 
-        // === Render using YouTube-provided colors, compact UI ===
-        const primary    = d.color || (d.colorVars && d.colorVars.primary) || null;  // card bg
+        const primary    = d.color || (d.colorVars && d.colorVars.primary) || null;
         const borderCol  = (d.colorVars && d.colorVars.secondary) || primary;
         const textOnCard = pickTextColor(primary || '#0c1414');
 
@@ -135,7 +164,6 @@ async function start(){
           ? `style="background:${primary}; color:${textOnCard}; border-color:${borderCol || primary}; padding:8px 12px; line-height:1.25"`
           : `style="padding:8px 12px; line-height:1.25"`;
 
-        // amount: bold text only (no background chip)
         const amountEl = `<span class="amount" style="font-weight:700; color:${textOnCard}; margin-left:8px;">${escapeHTML(d.amount || '$?')}</span>`;
         const msgEl = d.message ? `<div class="msg-txt" style="margin-top:2px;">${escapeHTML(d.message)}</div>` : '';
 
@@ -192,15 +220,14 @@ async function start(){
         );
         return;
       }
-
-      // Nothing else should arrive (server already filters)
-    }catch(err){ row(`• parse error: ${escapeHTML(err.message)}`,'status'); }
+    }catch(err){
+      row(`• parse error: ${escapeHTML(err.message)}`,'status');
+    }
   };
 
-  es.onerror = (e) => {
-    // Log it but let EventSource auto-reconnect.
+  es.onerror = () => {
     row('• stream hiccup — retrying…','status');
-    // DO NOT call es.close() here.
+    // EventSource auto-reconnects; keep it open.
   };
 }
 
@@ -211,6 +238,7 @@ async function stop(){
     row(`• stopped session ${sessionId}`,'status');
     sessionId=null;
   }
+  setBusy(false);
 }
 
 /* --------------------------------- wiring --------------------------------- */
@@ -218,3 +246,8 @@ async function stop(){
 startBtn.addEventListener('click', start);
 stopBtn.addEventListener('click', stop);
 input.addEventListener('keydown', e => { if(e.key==='Enter') start(); });
+
+// ensure cleanup when navigating away (helps Render stay stable)
+window.addEventListener('beforeunload', () => {
+  if (sessionId) navigator.sendBeacon?.(`${PARSER_ORIGIN}/stop/${sessionId}`);
+});
