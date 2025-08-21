@@ -60,6 +60,21 @@ function toPopoutUrl(inputUrl) {
   }
 }
 
+async function clickConsentIfPresent(page) {
+  const sels = [
+    'button[aria-label*="Agree"]',
+    'button:has-text("I agree")',
+    '#introAgreeButton',
+    'button[aria-label*="accept"]',
+  ];
+  for (const sel of sels) {
+    try {
+      const el = await page.$(sel);
+      if (el) { await el.click({ timeout: 1500 }).catch(()=>{}); break; }
+    } catch {}
+  }
+}
+
 // Pull the first numeric from an amount string like "$4.99", "CA$5.00", "¥500"
 function amountToFloat(s = '') {
   const m = String(s).replace(/,/g, '').match(/([0-9]+(?:\.[0-9]+)?)/);
@@ -375,52 +390,107 @@ async function startSession(url, idArg) {
   // NEW: open watch page for title/viewers/likes scraping
   await watchPage.goto(watch, { waitUntil: 'domcontentloaded', timeout: 45_000 });
 
+  // give the page a moment to hydrate, and dismiss consent if shown
+  await clickConsentIfPresent(watchPage);
+  await watchPage.waitForSelector('ytd-watch-flexy', { timeout: 10_000 }).catch(()=>{});
+
   /* ----------------------- watch page metadata scraping ---------------------- */
   async function scrapeWatchMeta(page) {
-   // Title: prefer attribute to keep emojis and avoid hidden spans
-   const titleAttr =
-     (await page.locator('h1.ytd-watch-metadata yt-formatted-string[title]').first().getAttribute('title').catch(()=>'')) || '';
-   const titleText =
-     (await page.locator('h1.ytd-watch-metadata yt-formatted-string').first().textContent().catch(()=>'')) || '';
-   const ogTitle =
-     (await page.locator('meta[property="og:title"]').first().getAttribute('content').catch(()=>'')) || '';
-   const fallbackDocTitle =
-     (await page.evaluate(() => document.title).catch(()=>'')) || '';
-   const title = (titleAttr || titleText || ogTitle || fallbackDocTitle || '').trim();
+    // Try to wait a little for *any* title source on cold loads
+    await page.waitForFunction(() => {
+      const og  = document.querySelector('meta[property="og:title"]')?.content?.trim();
+      const h1  = document.querySelector('h1.ytd-watch-metadata yt-formatted-string')?.textContent?.trim();
+      const yti = (window.ytInitialPlayerResponse && window.ytInitialPlayerResponse.videoDetails?.title) || '';
+      const dt  = (document.title || '').trim();
+      return Boolean((og && og.length) || (h1 && h1.length) || (yti && yti.length) || (dt && dt !== 'YouTube'));
+    }, { timeout: 8000 }).catch(()=>{});
 
-   // Viewers: use aria-label on #view-count e.g., "1,219 watching now"
-   const viewAria =
-     (await page.locator('#view-count').first().getAttribute('aria-label').catch(()=>'')) || '';
-   const vm = viewAria.replace(/,/g,'').match(/(\d[\d\s]*)\s*(?:watching\s+now|watching)/i);
-   const viewers = vm ? parseInt(vm[1].replace(/\s+/g,''), 10) : undefined;
+    const { title, viewers } = await page.evaluate(() => {
+      const pick = (...vals) => (vals.find(v => v && String(v).trim().length) || '').trim();
 
-   return { title, viewers };
+      // ---- TITLE (same as before but merged together) ----
+      const h1El    = document.querySelector('h1.ytd-watch-metadata yt-formatted-string');
+      const h1Title = h1El?.getAttribute?.('title') || '';
+      const h1Text  = h1El?.textContent || '';
+      const ogTitle = document.querySelector('meta[property="og:title"]')?.content || '';
+      const metaNameTitle = document.querySelector('meta[name="title"]')?.content || '';
+      const yti     = (window.ytInitialPlayerResponse && window.ytInitialPlayerResponse.videoDetails?.title) || '';
+      let docTitle  = document.title || '';
+      if (docTitle.endsWith(' - YouTube')) docTitle = docTitle.slice(0, -' - YouTube'.length).trim();
+
+      // ---- VIEWERS (robust) ----
+      const numberFrom = (s='') => {
+        const m = s.replace(/[.,]/g,'').match(/(\d[\d\s]*)\s*(?:watching\s+now|watching)/i);
+        return m ? parseInt(m[1].replace(/\s+/g,''), 10) : undefined;
+      };
+
+      // 1) aria-label on #view-count (sometimes present)
+      const vc       = document.querySelector('#view-count');
+      const aria     = vc?.getAttribute?.('aria-label') || '';
+      const vcText   = vc?.textContent || '';
+      let viewers    = numberFrom(aria) ?? numberFrom(vcText);
+
+      // 2) scan nearby yt-formatted-string lines
+      if (viewers === undefined) {
+        const els = document.querySelectorAll('ytd-watch-metadata yt-formatted-string, span, div');
+        for (const el of els) {
+          viewers = numberFrom(el.textContent || '');
+          if (viewers !== undefined) break;
+        }
+      }
+
+      // 3) last resort: a very cheap whole-page text scan
+      if (viewers === undefined) {
+        viewers = numberFrom(document.body?.innerText || '');
+      }
+
+      return { title: pick(h1Title, h1Text, ogTitle, metaNameTitle, yti, docTitle), viewers };
+    });
+
+    return { title, viewers };
   }
 
-  // NEW: poll meta every 10s, emit only when changed
-  let lastMeta = {};
+  let lastMeta = { title: undefined, viewers: undefined };
   const pushMeta = async () => {
     try {
       const next = await scrapeWatchMeta(watchPage);
       const s = sessions.get(id);
       if (!s) return;
-      const changed = next.title !== lastMeta.title || next.viewers !== lastMeta.viewers;
+
+      // Always store the freshest snapshot for new subscribers
       s.meta = next;
+
+      // Emit if *anything* changed OR if we didn't have viewers before and now we do
+      const changed =
+        next.title !== lastMeta.title ||
+        next.viewers !== lastMeta.viewers ||
+        (lastMeta.viewers === undefined && typeof next.viewers === 'number');
+
       if (changed) {
-       lastMeta = next;
-       const payload = { type:'meta', at: Date.now(), videoId, ...next };
-       const line = `data: ${JSON.stringify(payload)}\n\n`;
-       for (const sink of s.sinks) sink.write(line);
+        lastMeta = next;
+        const payload = { type: 'meta', at: Date.now(), videoId, ...next };
+        const line = `data: ${JSON.stringify(payload)}\n\n`;
+        for (const sink of s.sinks) sink.write(line);
       }
-    } catch {}
+    } catch (e) {
+      // swallow; we’ll try again on the next tick
+    }
   };
-  const metaTimer = setInterval(pushMeta, 10_000);
-  await pushMeta(); // prime
 
-  sessions.set(id, { browser, page, watchPage, sinks: new Set(), videoId, meta: lastMeta, metaTimer });
-  return id;
+  // Poll: faster for the first minute (to “catch” viewers), then settle
+  let metaInterval = 5000;
+  let metaTicks = 0;
+  const metaTimer = setInterval(async () => {
+    await pushMeta();
+    metaTicks += 1;
+    if (metaTicks === 12) { // after ~1 minute at 5s
+      clearInterval(metaTimer);
+      setInterval(pushMeta, 10000); // 10s steady
+    }
+  }, metaInterval);
+
+  await pushMeta(); // prime once immediately
 }
-
 /* --------------------------------- routes --------------------------------- */
 
 app.post('/start', async (req, res) => {

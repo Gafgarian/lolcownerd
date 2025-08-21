@@ -109,13 +109,13 @@ async function start(){
       }
 
       if (d.type === 'meta') {
-        if (metaTitleEl && d.title)   metaTitleEl.textContent   = d.title;
-        if (metaViewersEl && d.viewers !== undefined) {
+        if (metaTitleEl && d.title)   metaTitleEl.textContent = d.title;
+        if (metaViewersEl && d.viewers !== undefined && d.viewers !== null && d.viewers !== '') {
           const n = Number(d.viewers);
           metaViewersEl.textContent = Number.isFinite(n) ? n.toLocaleString() : '—';
         }
         return;
-      }      
+      }
 
       if (d.type === 'superchat') {
         // Already filtered + enriched server-side
