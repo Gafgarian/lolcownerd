@@ -127,6 +127,16 @@ async function start(){
       const d = JSON.parse(e.data);
       const t = new Date(d.at || Date.now()).toLocaleTimeString();
 
+      if (d.type === 'chat') {
+        row(
+          `<div class="row" style="padding:6px 10px; background:transparent; line-height:1.25">
+            <span class="who">[${t}] ${escapeHTML(d.author)}</span>
+            <span class="msg-txt">${escapeHTML(d.message)}</span>
+          </div>`, 'chat'
+        );
+        return;
+      }
+
       // Server may send 'hello'/'status' lines
       if (d.type === 'hello' || d.type === 'status') {
         row(`• ${escapeHTML(d.message || d.type)}`,'status');

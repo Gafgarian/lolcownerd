@@ -84,6 +84,13 @@ function enrichAndFilter(raw, videoId) {
   };
 
   switch (raw.type) {
+    case 'chat': {
+      return {
+        type: 'chat',
+        ...base
+      };
+    }
+    
     case 'superchat': {
       const amountFloat = amountToFloat(raw.amount || '');
       const currencyGuess = guessCurrency(raw.amount || '');
@@ -222,6 +229,15 @@ async function startSession(url) {
               message: txt('#message', n),
               color: colors.primary || n.getAttribute('body-background-color') || null,
               colorVars: colors,
+              timestamp: now()
+            };
+          }
+
+          if (tag === 'yt-live-chat-text-message-renderer') {
+            return {
+              type: 'chat',
+              author: txt('#author-name', n),
+              message: txt('#message', n),
               timestamp: now()
             };
           }
