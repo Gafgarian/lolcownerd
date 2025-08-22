@@ -313,6 +313,8 @@ async function startSession(url, idArg) {
     async function injectObserver() {
       const script = `
       (() => {
+        if (window.top !== window) return;
+
         if (window.__CHAT_OBSERVER_INSTALLED) return;
         window.__CHAT_OBSERVER_INSTALLED = true;
         const now = () => Date.now();
@@ -502,24 +504,74 @@ async function startSession(url, idArg) {
     await page.waitForSelector('yt-live-chat-app, yt-live-chat-renderer', { timeout: 45_000 }).catch(()=>{});
     await injectObserver();
 
-    /* ----------------------- watch page metadata scraping ---------------------- */
-    async function scrapeWatchMetaLight(pageObj, watchUrl) {
+    /* ----------------------- watch page metadata scraping (instrumented) ---------------------- */
+    async function scrapeWatchMetaViaIframe(pageObj, watchUrl) {
       return await pageObj.evaluate(async (watchUrlInner) => {
-        const pick = (...vals) => (vals.find(v => v && String(v).trim().length) || '').trim();
+        // stabilize language / avoid consent interstitials
+        const addParams = (url) => {
+          const u = new URL(url);
+          if (!u.searchParams.has('hl'))    u.searchParams.set('hl', 'en');
+          if (!u.searchParams.has('bpctr')) u.searchParams.set('bpctr', '9999999999');
+          return u.toString();
+        };
 
-        const res  = await fetch(watchUrlInner, { credentials: 'include', cache: 'no-store' });
-        const html = await res.text();
+        // ensure a hidden same-origin iframe is present and loaded
+        async function ensureIframe(src) {
+          let fr = document.getElementById('__watch_iframe');
+          if (fr && fr.contentDocument) return fr;
+          fr = document.createElement('iframe');
+          fr.id = '__watch_iframe';
+          fr.src = addParams(src);
+          fr.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:320px;height:240px;visibility:hidden;pointer-events:none;';
+          document.body.appendChild(fr);
+          await new Promise(res => {
+            const done = () => res();
+            fr.addEventListener('load', done, { once: true });
+            // safety timeout in case load fires late
+            setTimeout(done, 15000);
+          });
+          return fr;
+        }
 
-        const og   = html.match(/<meta property="og:title" content="([^"]+)"/i)?.[1] || '';
-        const name = html.match(/<meta name="title" content="([^"]+)"/i)?.[1] || '';
-        const jsonTitle = html.match(/"videoDetails"\s*:\s*\{[^}]*"title"\s*:\s*"([^"]+)"/i)?.[1] || '';
+        const fr  = await ensureIframe(watchUrlInner);
+        const doc = fr.contentDocument || fr.contentWindow?.document;
 
-        const toNum = s => (s ? parseInt(String(s).replace(/[^\d]/g, ''), 10) : undefined);
-        let viewers =
-          toNum(html.match(/"viewCountText"\s*:\s*\{\s*"runs"\s*:\s*\[\s*\{\s*"text"\s*:\s*"([\d,.\s]+)"/i)?.[1]) ??
-          toNum(html.match(/([\d,.\s]+)\s*(?:watching\s+now|watching|viewers?\s*live|currently\s*watching)/i)?.[1]);
+        const numFrom = (s) => {
+          if (!s) return null;
+          const m = String(s).replace(/[.,]/g,'').match(/(\d[\d\s]*)\s*watching\s+now/i);
+          return m ? parseInt(m[1].replace(/\s+/g,''), 10) : null;
+        };
 
-        return { title: pick(og, name, jsonTitle), viewers };
+        // ---- TITLE (from rendered doc) ----
+        let title =
+          doc.querySelector('meta[property="og:title"]')?.content?.trim() ||
+          doc.querySelector('meta[name="title"]')?.content?.trim() ||
+          (doc.querySelector('title')?.textContent || '').replace(/\s+-\s+YouTube$/,'').trim() ||
+          '';
+
+        // ---- VIEWERS (priority: tooltip -> span.view-count -> #view-count[aria-label]) ----
+        let viewers = null;
+
+        // 1) tooltip(s)
+        const tooltips = doc.querySelectorAll('#tooltip');
+        for (const t of tooltips) {
+          viewers = numFrom(t.textContent);
+          if (viewers != null) break;
+        }
+
+        // 2) span.view-count.ytd-video-view-count-renderer
+        if (viewers == null) {
+          const span = doc.querySelector('span.view-count.ytd-video-view-count-renderer');
+          viewers = numFrom(span?.textContent);
+        }
+
+        // 3) div#view-count[aria-label]
+        if (viewers == null) {
+          const vc = doc.getElementById('view-count');
+          viewers  = numFrom(vc?.getAttribute('aria-label'));
+        }
+
+        return { title, viewers };
       }, watchUrl);
     }
 
@@ -527,18 +579,28 @@ async function startSession(url, idArg) {
 
     async function pushMetaFromHTML() {
       try {
-        const next = await scrapeWatchMetaLight(page, watch);
+        const { title, viewers } = await scrapeWatchMetaViaIframe(page, watch);
+
+        // Keep previous good values if scrape returns empty/null
+        const merged = {
+          title:   title && title.length ? title : lastMeta.title,
+          viewers: (typeof viewers === 'number') ? viewers : lastMeta.viewers
+        };
+
         const s = sessions.get(id); if (!s) return;
-        s.meta = next;
+        s.meta = merged;
+
         const changed =
-          next.title !== lastMeta.title ||
-          next.viewers !== lastMeta.viewers ||
-          (lastMeta.viewers === undefined && typeof next.viewers === 'number');
+          merged.title !== lastMeta.title ||
+          merged.viewers !== lastMeta.viewers ||
+          (lastMeta.viewers === undefined && typeof merged.viewers === 'number');
+
         if (changed) {
-          lastMeta = next;
-          push({ type: 'meta', at: Date.now(), videoId, ...next });
+          lastMeta = merged;
+          push({ type: 'meta', at: Date.now(), videoId, ...merged });
         }
-      } catch {}
+      } catch (e) {
+      }
     }
 
     const metaTimer = setInterval(pushMetaFromHTML, 15000);
