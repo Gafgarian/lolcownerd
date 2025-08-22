@@ -10,7 +10,12 @@ process.on('uncaughtException', e => console.error('[uncaughtException]', e));
 process.on('SIGTERM', async () => {
   try {
     for (const [, s] of sessions) {
-      clearInterval(s.metaTimer);
+      try {
+        clearInterval(s.metaTimer);
+        clearInterval(s.watchdogTimer);
+        clearInterval(s.idleCheckTimer);
+        if (s.onAutoStop) app.off('autostop', s.onAutoStop);
+      } catch {}
       await s.page?.close().catch(()=>{});
       await s.browser?.close().catch(()=>{});
     }
@@ -20,10 +25,10 @@ process.on('SIGTERM', async () => {
 });
 
 /* --------------------------------- state ---------------------------------- */
-/** id -> { browser, page, sinks:Set<res>, videoId, meta, metaTimer } */
+/** id -> { browser, page, sinks:Set<res>, videoId, meta, metaTimer, watchdogTimer, idleCheckTimer, onAutoStop } */
 const sessions = new Map();
 
-/* ---------------------------- Render-friendly PW ---------------------------- */
+/* ---------------------------- Render-friendly PW --------------------------- */
 const CHROME_ARGS = [
   '--no-sandbox',
   '--disable-setuid-sandbox',
@@ -48,6 +53,7 @@ async function launchBrowserOnce() {
     args: CHROME_ARGS,
     timeout: 240_000,
   });
+
   const context = await browser.newContext({
     userAgent: UA,
     locale: 'en-US',
@@ -59,19 +65,31 @@ async function launchBrowserOnce() {
     'Referer': 'https://www.youtube.com/',
   });
 
+  // Block heavy/irrelevant resources
   await context.route('**/*', route => {
     const req = route.request();
     const t   = req.resourceType();
-    const url = req.url();
     let host = '';
-    try { host = new URL(url).hostname; } catch {}
+    try { host = new URL(req.url()).hostname; } catch {}
 
-    if (t === 'image' || t === 'media' || t === 'font' || t === 'stylesheet') return route.abort();
-    if (/doubleclick\.net|googleads|adservice\.google\.com/.test(host)) return route.abort();
-    if ((t === 'xhr' || t === 'fetch') && !/youtube\.com$/.test(host) && !/\.youtube\.com$/.test(host)) {
+    if (t === 'image' || t === 'media' || t === 'font' || t === 'stylesheet' || t === 'preload' || t === 'prefetch' || t === 'beacon') {
       return route.abort();
     }
+    if (/doubleclick\.net|googleads|adservice\.google\.com/.test(host)) return route.abort();
+    if ((t === 'xhr' || t === 'fetch') && !/(\.|^)youtube\.com$/i.test(host)) return route.abort();
     return route.continue();
+  });
+
+  // Disable Service Workers to avoid in-memory caches
+  await context.addInitScript(() => {
+    try {
+      const sw = navigator.serviceWorker;
+      if (sw) {
+        sw.getRegistrations?.().then(rs => rs.forEach(r => r.unregister?.()));
+        const orig = sw.register?.bind(sw);
+        if (orig) sw.register = () => Promise.reject(new Error('sw disabled'));
+      }
+    } catch {}
   });
 
   try {
@@ -226,7 +244,8 @@ async function startSessionDetached(url) {
   const id = nanoid();
   sessions.set(id, {
     browser: null, page: null,
-    sinks: new Set(), videoId: null, meta: {}, metaTimer: null
+    sinks: new Set(), videoId: null, meta: {},
+    metaTimer: null, watchdogTimer: null, idleCheckTimer: null, onAutoStop: null
   });
   startSession(url, id)
     .then(() => console.log('[session %s] ready', id))
@@ -242,16 +261,15 @@ async function startSession(url, idArg) {
   const id = idArg || nanoid();
   const { live, replay, watch, videoId } = toPopoutUrl(url);
 
-  // declare upfront so they exist for cleanup on error
   let browser, context, page;
-
   try {
     ({ browser, context, page } = await launchBrowserWithRetry(2));
 
     sessions.set(id, {
       browser, page,
       sinks: (sessions.get(id)?.sinks) || new Set(),
-      videoId, meta: {}, metaTimer: null
+      videoId, meta: {},
+      metaTimer: null, watchdogTimer: null, idleCheckTimer: null, onAutoStop: null
     });
 
     const push = (payload) => {
@@ -263,17 +281,22 @@ async function startSession(url, idArg) {
 
     let lastChatAt = Date.now();
 
-    await page.exposeBinding('pushChatEvent', (_src, payload) => {
-      if (payload && payload.type && payload.type !== 'status') {
-        lastChatAt = Date.now();
-      }
+    // Limit binding to the live_chat frame to avoid dupes
+    await page.exposeBinding('pushChatEvent', (source, payload) => {
+      const f = source?.frame;
+      const fUrl = f ? f.url() : '';
+      if (!/\/(live_chat|live_chat_replay)\?/.test(fUrl)) return;
+
+      if (payload && payload.type && payload.type !== 'status') lastChatAt = Date.now();
       const enriched = enrichAndFilter(payload, videoId);
       if (enriched) push(enriched);
     });
 
+    /* -------------------------- idle closer + autostop -------------------------- */
     function attachIdleCloser(sessionId) {
-      const IDLE_MS = 60_000; // 1 minute after last client disconnect
+      const IDLE_MS = 60_000;
       let timer = null;
+
       const check = () => {
         const s = sessions.get(sessionId);
         if (!s) return;
@@ -283,20 +306,30 @@ async function startSession(url, idArg) {
           clearTimeout(timer); timer = null;
         }
       };
-      setInterval(check, 5000);
+      const t = setInterval(check, 5000);
+      const s0 = sessions.get(sessionId); if (s0) s0.idleCheckTimer = t;
     }
-    app.on('autostop', async (sid) => {
+
+    const onAutoStop = async (sid) => {
+      if (sid !== id) return;
       const s = sessions.get(sid); if (!s) return;
       try {
         clearInterval(s.metaTimer);
+        clearInterval(s.watchdogTimer);
+        clearInterval(s.idleCheckTimer);
         await s.page?.close().catch(()=>{});
         await s.browser?.close().catch(()=>{});
-      } finally { sessions.delete(sid); }
-    });
+      } finally {
+        app.off('autostop', s.onAutoStop);
+        sessions.delete(sid);
+      }
+    };
+    app.on('autostop', onAutoStop);
+    const sAS = sessions.get(id); if (sAS) sAS.onAutoStop = onAutoStop;
     attachIdleCloser(id);
 
-    // watchdog: if no chat-ish events for 30s, nudge the page to rebinding path
-    setInterval(async () => {
+    /* ------------------------------ watchdog nudge ------------------------------ */
+    const wd = setInterval(async () => {
       try {
         const lastInPage = await page.evaluate(() => window.__lastPushAt || 0);
         const stale = Date.now() - Math.max(lastChatAt, lastInPage);
@@ -309,18 +342,20 @@ async function startSession(url, idArg) {
         }
       } catch {}
     }, 10000);
+    const sWD = sessions.get(id); if (sWD) sWD.watchdogTimer = wd;
 
+    /* ------------------------------ chat observer ------------------------------ */
     async function injectObserver() {
       const script = `
       (() => {
+        // run only in top (popout) window so hidden iframes don't double-publish
         if (window.top !== window) return;
-
         if (window.__CHAT_OBSERVER_INSTALLED) return;
         window.__CHAT_OBSERVER_INSTALLED = true;
+
         const now = () => Date.now();
         window.__lastPushAt = now();
 
-        const isEl = n => n && n.nodeType === 1;
         function queryAllDeep(sel, root=document) {
           const out=[]; const seen=new Set(); const stack=[root];
           while (stack.length) {
@@ -347,9 +382,12 @@ async function startSession(url, idArg) {
 
         const seen = new Set();
         function keyFor(n){
+          const id =
+            (n.getAttribute && n.getAttribute('id')) ||
+            (n.dataset && (n.dataset.id || n.dataset.messageId || n.dataset.chatId)) || '';
           const who = deepText('#author-name', n);
-          const body = deepText('#message', n) || (n.textContent||'').trim();
-          return (n.tagName + '|' + who + '|' + body).slice(0,256);
+          const body = (deepText('#message', n) || (n.textContent||'')).replace(/\\s+/g,' ').trim();
+          return (n.tagName + '|' + id + '|' + who + '|' + body).slice(0,512);
         }
         function readColors(host){
           try {
@@ -411,7 +449,7 @@ async function startSession(url, idArg) {
             const primary = deepText('#primary-text', n);
             const body = (primary || (n.textContent || ''))
                           .replace(/,/g, '')
-                          .replace(/\s+/g, ' ')
+                          .replace(/\\s+/g, ' ')
                           .trim();
             const m =
               body.match(/(?:sent\\s*)?(\\d+)\\D{0,80}gift(?:ed|ing)?\\s*memberships?/i) ||
@@ -504,84 +542,64 @@ async function startSession(url, idArg) {
     await page.waitForSelector('yt-live-chat-app, yt-live-chat-renderer', { timeout: 45_000 }).catch(()=>{});
     await injectObserver();
 
-    /* ----------------------- watch page metadata scraping (instrumented) ---------------------- */
+    /* -------------------- watch page metadata (ephemeral iframe) -------------------- */
     async function scrapeWatchMetaViaIframe(pageObj, watchUrl) {
       return await pageObj.evaluate(async (watchUrlInner) => {
-        // stabilize language / avoid consent interstitials
         const addParams = (url) => {
           const u = new URL(url);
           if (!u.searchParams.has('hl'))    u.searchParams.set('hl', 'en');
           if (!u.searchParams.has('bpctr')) u.searchParams.set('bpctr', '9999999999');
           return u.toString();
         };
-
-        // ensure a hidden same-origin iframe is present and loaded
-        async function ensureIframe(src) {
-          let fr = document.getElementById('__watch_iframe');
-          if (fr && fr.contentDocument) return fr;
-          fr = document.createElement('iframe');
-          fr.id = '__watch_iframe';
-          fr.src = addParams(src);
-          fr.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:320px;height:240px;visibility:hidden;pointer-events:none;';
-          document.body.appendChild(fr);
-          await new Promise(res => {
-            const done = () => res();
-            fr.addEventListener('load', done, { once: true });
-            // safety timeout in case load fires late
-            setTimeout(done, 15000);
-          });
-          return fr;
-        }
-
-        const fr  = await ensureIframe(watchUrlInner);
-        const doc = fr.contentDocument || fr.contentWindow?.document;
-
-        const numFrom = (s) => {
+        const toNum = s => {
           if (!s) return null;
           const m = String(s).replace(/[.,]/g,'').match(/(\d[\d\s]*)\s*watching\s+now/i);
           return m ? parseInt(m[1].replace(/\s+/g,''), 10) : null;
         };
 
-        // ---- TITLE (from rendered doc) ----
-        let title =
-          doc.querySelector('meta[property="og:title"]')?.content?.trim() ||
-          doc.querySelector('meta[name="title"]')?.content?.trim() ||
-          (doc.querySelector('title')?.textContent || '').replace(/\s+-\s+YouTube$/,'').trim() ||
-          '';
+        const src = addParams(watchUrlInner);
+        return await new Promise((resolve) => {
+          const fr = document.createElement('iframe');
+          fr.sandbox = 'allow-same-origin allow-scripts';
+          fr.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:320px;height:240px;visibility:hidden;pointer-events:none;';
+          const cleanup = () => { try { fr.src = 'about:blank'; } catch {} fr.remove(); };
 
-        // ---- VIEWERS (priority: tooltip -> span.view-count -> #view-count[aria-label]) ----
-        let viewers = null;
+          const timer = setTimeout(() => { cleanup(); resolve({ title:'', viewers:null }); }, 12000);
+          fr.onload = () => {
+            try {
+              const doc = fr.contentDocument || fr.contentWindow?.document;
+              let title =
+                doc.querySelector('meta[property="og:title"]')?.content?.trim() ||
+                doc.querySelector('meta[name="title"]')?.content?.trim() ||
+                (doc.querySelector('title')?.textContent || '').replace(/\s+-\s+YouTube$/,'').trim() || '';
 
-        // 1) tooltip(s)
-        const tooltips = doc.querySelectorAll('#tooltip');
-        for (const t of tooltips) {
-          viewers = numFrom(t.textContent);
-          if (viewers != null) break;
-        }
+              let viewers = null;
+              for (const t of doc.querySelectorAll('#tooltip')) { viewers = toNum(t.textContent); if (viewers != null) break; }
+              if (viewers == null) viewers = toNum(doc.querySelector('span.view-count.ytd-video-view-count-renderer')?.textContent);
+              if (viewers == null) viewers = toNum(doc.getElementById('view-count')?.getAttribute('aria-label'));
 
-        // 2) span.view-count.ytd-video-view-count-renderer
-        if (viewers == null) {
-          const span = doc.querySelector('span.view-count.ytd-video-view-count-renderer');
-          viewers = numFrom(span?.textContent);
-        }
-
-        // 3) div#view-count[aria-label]
-        if (viewers == null) {
-          const vc = doc.getElementById('view-count');
-          viewers  = numFrom(vc?.getAttribute('aria-label'));
-        }
-
-        return { title, viewers };
+              clearTimeout(timer);
+              cleanup();
+              resolve({ title, viewers });
+            } catch {
+              clearTimeout(timer);
+              cleanup();
+              resolve({ title:'', viewers:null });
+            }
+          };
+          fr.src = src;
+          document.body.appendChild(fr);
+        });
       }, watchUrl);
     }
 
     let lastMeta = { title: undefined, viewers: undefined };
+    let viewersFound = false;
 
     async function pushMetaFromHTML() {
       try {
         const { title, viewers } = await scrapeWatchMetaViaIframe(page, watch);
 
-        // Keep previous good values if scrape returns empty/null
         const merged = {
           title:   title && title.length ? title : lastMeta.title,
           viewers: (typeof viewers === 'number') ? viewers : lastMeta.viewers
@@ -599,13 +617,23 @@ async function startSession(url, idArg) {
           lastMeta = merged;
           push({ type: 'meta', at: Date.now(), videoId, ...merged });
         }
-      } catch (e) {
-      }
+
+        if (!viewersFound && typeof merged.viewers === 'number') {
+          viewersFound = true;
+          // slow down once we have a steady viewers value
+          const sess = sessions.get(id);
+          if (sess) {
+            clearInterval(sess.metaTimer);
+            sess.metaTimer = setInterval(pushMetaFromHTML, 15_000);
+          }
+        }
+      } catch {}
     }
 
-    const metaTimer = setInterval(pushMetaFromHTML, 15000);
+    // start fast until viewers are found, then switch to 15s
+    const fast = setInterval(pushMetaFromHTML, 3_000);
+    const s0 = sessions.get(id); if (s0) s0.metaTimer = fast;
     await pushMetaFromHTML();
-    const s0 = sessions.get(id); if (s0) s0.metaTimer = metaTimer;
 
   } catch (err) {
     try { await page?.close(); } catch {}
@@ -665,6 +693,9 @@ app.post('/stop/:id', async (req, res) => {
   if (!s) return res.json({ ok: true });
   try {
     clearInterval(s.metaTimer);
+    clearInterval(s.watchdogTimer);
+    clearInterval(s.idleCheckTimer);
+    if (s.onAutoStop) app.off('autostop', s.onAutoStop);
     await s.page?.close().catch(()=>{});
     await s.browser?.close().catch(()=>{});
   } finally {
