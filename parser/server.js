@@ -41,6 +41,7 @@ const CHROME_ARGS = [
   '--disable-features=Translate,MediaRouter',
   '--mute-audio',
   '--hide-scrollbars',
+  '--blink-settings=imagesEnabled=false',
 ];
 
 const UA =
@@ -80,7 +81,7 @@ async function launchBrowserOnce() {
     return route.continue();
   });
 
-  // Disable Service Workers to avoid in-memory caches
+  // Disable Service Workers and animations (lower CPU/mem)
   await context.addInitScript(() => {
     try {
       const sw = navigator.serviceWorker;
@@ -90,8 +91,14 @@ async function launchBrowserOnce() {
         if (orig) sw.register = () => Promise.reject(new Error('sw disabled'));
       }
     } catch {}
+    try {
+      const style = document.createElement('style');
+      style.textContent = '*,*::before,*::after{animation:none!important;transition:none!important}';
+      document.documentElement.appendChild(style);
+    } catch {}
   });
 
+  // Cookie to avoid consent wall
   try {
     const oneYear = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365;
     await context.addCookies([
@@ -281,10 +288,9 @@ async function startSession(url, idArg) {
 
     let lastChatAt = Date.now();
 
-    // Limit binding to the live_chat frame to avoid dupes
+    // Accept events only from the popout chat frame (prevents dupes)
     await page.exposeBinding('pushChatEvent', (source, payload) => {
-      const f = source?.frame;
-      const fUrl = f ? f.url() : '';
+      const fUrl = source?.frame?.url() || '';
       if (!/\/(live_chat|live_chat_replay)\?/.test(fUrl)) return;
 
       if (payload && payload.type && payload.type !== 'status') lastChatAt = Date.now();
@@ -348,7 +354,7 @@ async function startSession(url, idArg) {
     async function injectObserver() {
       const script = `
       (() => {
-        // run only in top (popout) window so hidden iframes don't double-publish
+        // Only in the popout (top window). Prevents firing from any hidden iframes.
         if (window.top !== window) return;
         if (window.__CHAT_OBSERVER_INSTALLED) return;
         window.__CHAT_OBSERVER_INSTALLED = true;
@@ -356,6 +362,7 @@ async function startSession(url, idArg) {
         const now = () => Date.now();
         window.__lastPushAt = now();
 
+        // Deep query util that walks shadow roots — reliable for YT's DOM.
         function queryAllDeep(sel, root=document) {
           const out=[]; const seen=new Set(); const stack=[root];
           while (stack.length) {
@@ -379,6 +386,19 @@ async function startSession(url, idArg) {
           }
           return queryDeep('#items') || queryDeep('#contents') || null;
         }
+
+        // Batch across the JS boundary (cuts overhead a lot)
+        const q = [];
+        let flushId = 0;
+        const publish = (obj) => {
+          q.push(obj);
+          if (flushId) return;
+          flushId = setTimeout(() => {
+            const batch = q.splice(0);
+            flushId = 0;
+            for (const x of batch) { try { window.pushChatEvent(x); } catch {} }
+          }, 50);
+        };
 
         const seen = new Set();
         function keyFor(n){
@@ -483,7 +503,7 @@ async function startSession(url, idArg) {
             if (seen.has(key)) return;
             const d = parse(n); if (!d) return;
             seen.add(key); window.__lastPushAt = now();
-            try { window.pushChatEvent(d); } catch {}
+            publish(d);
             pushed++;
           });
           return pushed;
@@ -503,13 +523,16 @@ async function startSession(url, idArg) {
               const d = parse(n);
               if (d) {
                 const k = keyFor(n);
-                if (!seen.has(k)) { seen.add(k); window.__lastPushAt = now(); try { window.pushChatEvent(d); } catch {} }
+                if (!seen.has(k)) { seen.add(k); window.__lastPushAt = now(); publish(d); }
               }
             }
-            if (!any) sweep(itemsRoot);
+            if (!any) {
+              (window.requestIdleCallback || setTimeout)(() => sweep(itemsRoot), 500);
+            }
           });
+          // subtree:true keeps reliability; batching above keeps CPU reasonable
           mo.observe(itemsRoot, { childList:true, subtree:true });
-          try { window.pushChatEvent({ type:'status', message:'observer-started', timestamp: now() }); } catch {}
+          publish({ type:'status', message:'observer-started', timestamp: now() });
           return true;
         }
 
@@ -525,8 +548,7 @@ async function startSession(url, idArg) {
         const start = () => { bind() || setTimeout(start, 1000); };
         start();
         setInterval(() => { if (!itemsRoot || !document.contains(itemsRoot)) bind(); }, 5000);
-
-        setInterval(()=>{ try { window.pushChatEvent({ type:'status', message:'observer-alive', timestamp: now() }); } catch {} }, 10000);
+        setInterval(()=>{ publish({ type:'status', message:'observer-alive', timestamp: now() }); }, 10000);
       })();
       `;
       await page.addInitScript(script);
