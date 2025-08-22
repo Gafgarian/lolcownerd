@@ -34,6 +34,41 @@ function escapeHTML(s=''){return s.replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt
 function row(html, cls=''){ const d=document.createElement('div'); d.className=`msg ${cls}`; d.innerHTML=html; feed.prepend(d); }
 function currencyFormat(n){ return `$${n.toFixed(2)}`; }
 
+function extractVideoId(input) {
+  try {
+    const u = new URL(input);
+    return u.searchParams.get('v') || u.pathname.split('/').filter(Boolean).pop();
+  } catch {
+    // If not a URL, assume they pasted a raw ID
+    return input.trim();
+  }
+}
+
+function normalizeYtInput(input) {
+  // Accept popout URL, watch URL, shorts/live URL, or a bare ID
+  try {
+    const u = new URL(input);
+    const v = u.searchParams.get('v') || u.pathname.split('/').filter(Boolean).pop();
+    if (!v) return null;
+    return {
+      videoId: v,
+      watch:  `https://www.youtube.com/watch?v=${v}`,
+      popout: `https://www.youtube.com/live_chat?is_popout=1&v=${v}`,
+      replay: `https://www.youtube.com/live_chat_replay?is_popout=1&v=${v}`,
+    };
+  } catch {
+    // Treat input as already a video ID
+    const v = String(input).trim();
+    if (!v) return null;
+    return {
+      videoId: v,
+      watch:  `https://www.youtube.com/watch?v=${v}`,
+      popout: `https://www.youtube.com/live_chat?is_popout=1&v=${v}`,
+      replay: `https://www.youtube.com/live_chat_replay?is_popout=1&v=${v}`,
+    };
+  }
+}
+
 // --- color helpers for readable text over YT colors ---
 function parseRGBA(str){
   const m = String(str || '').match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
@@ -84,11 +119,23 @@ function setBusy(b){
 /* ------------------------------- lifecycle -------------------------------- */
 
 async function start(){
-  const url = input.value.trim();
-  if(!url) return alert('Paste a YouTube URL first.');
+  const raw = input.value.trim();
+  if (!raw) return alert('Paste a YouTube URL or video ID first.');
+
+  const videoId = extractVideoId(raw);
+  if (!videoId) {
+    row('⚠️ Could not parse a video ID from that input.','status');
+    return;
+  }
+
+  const norm = normalizeYtInput(raw);
+  if (!norm) { row('⚠️ Could not parse a video ID from that input.','status'); return; }
 
   resetAll();
   setBusy(true);
+
+  // Show what the server will use (for quick debugging)
+  row(`• using chat=${escapeHTML(norm.popout)} and meta=${escapeHTML(norm.watch)}`, 'status');
 
   if (es) { es.close(); es=null; }
   if (sessionId) { try{ await fetch(`${PARSER_ORIGIN}/stop/${sessionId}`,{method:'POST'}) }catch{}; sessionId=null; }
@@ -98,7 +145,7 @@ async function start(){
     res  = await fetch(`${PARSER_ORIGIN}/start`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({url})
+      body:JSON.stringify({ url: videoId })
     });
     json = await res.json().catch(()=>({}));
   }catch(err){
@@ -175,7 +222,7 @@ async function start(){
           : `style="padding:8px 12px; line-height:1.25"`;
 
         const amountEl = `<span class="amount" style="font-weight:700; color:${textOnCard}; margin-left:8px;">${escapeHTML(d.amount || '$?')}</span>`;
-        const msgEl = d.message ? `<div class="msg-txt" style="margin-top:2px;">${escapeHTML(d.message)}</div>` : '';
+        const msgEl = d.message ? `<div class="msg-txt">${escapeHTML(d.message)}</div>` : '';
 
         row(
           `<div class="row" ${cardStyle}>
@@ -211,7 +258,7 @@ async function start(){
               <span class="who">[${t}] ${escapeHTML(d.author)}</span>
               <span>🟢 ${escapeHTML(d.header || 'New member')}</span>
             </div>
-            ${d.message ? `<div class="msg-txt" style="margin-top:2px;">${escapeHTML(d.message)}</div>` : ''}
+            ${d.message ? `<div class="msg-txt">${escapeHTML(d.message)}</div>` : ''}
           </div>`, 'member'
         );
         return;
@@ -225,7 +272,7 @@ async function start(){
               <span class="who">[${t}] ${escapeHTML(d.author)}</span>
               <span>🏅 ${escapeHTML(d.header || 'Milestone')}${extra}</span>
             </div>
-            ${d.message ? `<div class="msg-txt" style="margin-top:2px;">${escapeHTML(d.message)}</div>` : ''}
+            ${d.message ? `<div class="msg-txt">${escapeHTML(d.message)}</div>` : ''}
           </div>`, 'member'
         );
         return;
