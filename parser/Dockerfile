@@ -1,30 +1,27 @@
 # syntax=docker/dockerfile:1
 
-# Playwright image (Chromium + all deps preinstalled)
-FROM mcr.microsoft.com/playwright:v1.46.0-jammy
+# Match the version in package.json (1.54.2 here)
+FROM mcr.microsoft.com/playwright:v1.54.2-jammy
 
 WORKDIR /app
 
+# Keep Playwright from re-downloading browsers (image already has them)
 ENV NODE_ENV=production \
     PORT=8080 \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# Install Yarn Classic globally so Corepack won't touch package.json
+# Avoid Corepack editing package.json at runtime
 RUN npm i -g yarn@1.22.22
 
-# Copy manifests first to leverage Docker layer cache
+# Install deps first to leverage cache
 COPY package.json yarn.lock* ./
-
-# Install deps (works for classic lockfiles)
 RUN yarn install --frozen-lockfile || yarn install
 
-# Copy the rest of the app
+# App source
 COPY . .
 
-# Ensure the runtime user owns the files
+# Ensure non-root user can read/write
 RUN chown -R pwuser:pwuser /app
-
-# Drop privileges (this user is provided by the Playwright base image)
 USER pwuser
 
 EXPOSE 8080
