@@ -21,23 +21,31 @@ const log = {
 };
 const slog = (id, ...args) => should(2) && console.log(ts(), `[session ${id}]`, ...args);
 
-// de-dupe helper: prints a line at most once every DEDUP_MS per key
-const _last = new Map();
-function logDedup(key, fn) {
-  const now = Date.now();
-  const prev = _last.get(key) || 0;
-  if (now - prev < DEDUP_MS) return;
-  _last.set(key, now);
-  fn();
-}
-
 // noisy browser messages to ignore entirely
 const IGNORE_RX = [
-  /Failed to load resource: net::ERR_FAILED/i,                        // blocked/aborted requests
-  /requestIdleCallback.*IdleRequestOptions/i,                         // harmless type warning
+  /Failed to load resource: net::ERR_FAILED/i,
+  /server responded with a status of 403/i,
+  /A network error occurred/i,
+  /Failed to get ServiceWorkerRegistration objects/i,
+  /requestIdleCallback.*IdleRequestOptions/i,
   /A preload for .* is found, but is not used/i,
-  /Failed to get ServiceWorkerRegistration objects/i
+  /WebGL-0x/i, // GL driver spam
 ];
+
+const ABORTED_TYPES = new Set(['image','media','font','stylesheet','preload','prefetch','beacon']);
+const BENIGN_HOSTS_RX = /(^|\.)ytimg\.com$|(^|\.)googlevideo\.com$|(^|\.)gstatic\.com$|(^|\.)google-analytics\.com$/i;
+
+const _dedupSeen = new Map();
+function logDedup(key, fn, ttlMs = 15000) {
+  const now = Date.now();
+  const hit = _dedupSeen.get(key);
+  if (hit && hit > now) return;
+  _dedupSeen.set(key, now + ttlMs);
+  try { fn(); } finally {
+    // lazy cleanup
+    for (const [k, until] of _dedupSeen) if (until < now) _dedupSeen.delete(k);
+  }
+}
 
 /* ------------------------------ crash logging ------------------------------ */
 process.on('unhandledRejection', e => console.error('[unhandledRejection]', e));
@@ -314,26 +322,49 @@ async function startSession(url, idArg) {
       metaTimer: null, watchdogTimer: null, idleCheckTimer: null, onAutoStop: null
     });
 
+    // --- quiet, useful logging only ---
     page.on('pageerror', e => {
       const text = String(e?.message || e || '');
-      if (IGNORE_RX.some(rx => rx.test(text))) return;
-      logDedup(`pageerror|${text.slice(0,200)}`, () =>
-        log.warn(`[session ${id}] pageerror: ${text}`)
-      );
+      if (IGNORE_RX.some(rx => rx.test(text))) return;     // ignore known noise
+      logDedup(`pageerror:${text.slice(0,200)}`, () => {
+        console.warn(ts(), `[session ${id}] pageerror: ${text}`);
+      });
     });
 
     page.on('console', msg => {
-      if (PAGE_CONSOLE === 'none') return;
-      const type = msg.type();
-      if (PAGE_CONSOLE === 'errors' && type !== 'error') return;
-
+      const type = msg.type();                 // 'log','warning','error', etc.
+      if (!/^(warning|error)$/i.test(type)) return;
       const text = msg.text();
       if (IGNORE_RX.some(rx => rx.test(text))) return;
+      logDedup(`console:${type}:${text.slice(0,200)}`, () => {
+        console.warn(ts(), `[session ${id}] page console ${type}:`, text);
+      });
+    });
 
-      // de-dupe very chatty repeats
-      logDedup(`console|${type}|${text.slice(0,200)}`, () =>
-        log.info(`[session ${id}] page console ${type}: ${text}`)
-      );
+    // Only log unexpected request failures (not our own aborts or benign CDNs)
+    page.on('requestfailed', req => {
+      try {
+        const url = req.url();
+        const { hostname } = new URL(url);
+        const rtype = req.resourceType();
+        const failure = req.failure()?.errorText || '';
+
+        // Ignore failures we caused by aborting heavy resources
+        if (ABORTED_TYPES.has(rtype) && /ERR_FAILED/i.test(failure)) return;
+
+        // Ignore common YT/CDN noise
+        if (BENIGN_HOSTS_RX.test(hostname) && /403|ERR_FAILED|blocked|aborted/i.test(failure)) return;
+
+        const key = `reqfail:${hostname}:${rtype}:${failure}`;
+        logDedup(key, () => {
+          console.warn(
+            ts(),
+            `[session ${id}] requestfailed ${rtype} ${hostname} :: ${failure}`
+          );
+        });
+      } catch {
+        /* ignore url parse issues */
+      }
     });
 
     const push = (payload) => {
@@ -633,45 +664,110 @@ async function startSession(url, idArg) {
           if (!u.searchParams.has('bpctr')) u.searchParams.set('bpctr', '9999999999');
           return u.toString();
         };
-        const toNum = s => {
+
+        // persistent same-origin iframe (reused across polls)
+        async function ensureIframe(src) {
+          let fr = document.getElementById('__watch_iframe');
+          if (!fr || !fr.contentDocument) {
+            fr = document.createElement('iframe');
+            fr.id = '__watch_iframe';
+            fr.sandbox = 'allow-same-origin allow-scripts';
+            fr.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:360px;height:240px;visibility:hidden;pointer-events:none;';
+            document.body.appendChild(fr);
+          }
+          const next = addParams(src);
+          if (fr.src !== next) {
+            await new Promise(res => {
+              const done = () => res();
+              fr.addEventListener('load', done, { once: true });
+              fr.src = next;
+            });
+          } else {
+            // already loaded once; give the page a moment to settle
+            await new Promise(r => setTimeout(r, 100));
+          }
+          return fr;
+        }
+
+        const numFrom = (s) => {
           if (!s) return null;
           const m = String(s).replace(/[.,]/g,'').match(/(\d[\d\s]*)\s*watching\s+now/i);
           return m ? parseInt(m[1].replace(/\s+/g,''), 10) : null;
         };
 
-        const src = addParams(watchUrlInner);
-        return await new Promise((resolve) => {
-          const fr = document.createElement('iframe');
-          fr.sandbox = 'allow-same-origin allow-scripts';
-          fr.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:320px;height:240px;visibility:hidden;pointer-events:none;';
-          const cleanup = () => { try { fr.src = 'about:blank'; } catch {} fr.remove(); };
-
-          const timer = setTimeout(() => { cleanup(); resolve({ title:'', viewers:null, via:null }); }, 12000);
-          fr.onload = () => {
-            try {
-              const doc = fr.contentDocument || fr.contentWindow?.document;
-              let title =
-                doc.querySelector('meta[property="og:title"]')?.content?.trim() ||
-                doc.querySelector('meta[name="title"]')?.content?.trim() ||
-                (doc.querySelector('title')?.textContent || '').replace(/\s+-\s+YouTube$/,'').trim() || '';
-
-              let viewers = null, via = null;
-              for (const t of doc.querySelectorAll('#tooltip')) { const n = toNum(t.textContent); if (n != null) { viewers = n; via = 'tooltip'; break; } }
-              if (viewers == null) { const n = toNum(doc.querySelector('span.view-count.ytd-video-view-count-renderer')?.textContent); if (n != null) { viewers = n; via = 'span.view-count'; } }
-              if (viewers == null) { const n = toNum(doc.getElementById('view-count')?.getAttribute('aria-label')); if (n != null) { viewers = n; via = 'aria-label'; } }
-
-              clearTimeout(timer);
-              cleanup();
-              resolve({ title, viewers, via });
-            } catch {
-              clearTimeout(timer);
-              cleanup();
-              resolve({ title:'', viewers:null, via:null });
+        function readFromSeeds(doc) {
+          try {
+            // Find the script tags that hold ytInitialData / ytInitialPlayerResponse
+            const scripts = [...doc.querySelectorAll('script')].map(s => s.textContent || '');
+            for (const txt of scripts) {
+              // ytInitialData
+              const i = txt.indexOf('ytInitialData');
+              if (i >= 0) {
+                const m = txt.match(/ytInitialData\s*=\s*(\{[\s\S]*?\});/);
+                if (m) {
+                  const j = JSON.parse(m[1]);
+                  // Look for a "watching now" string anywhere
+                  const s = JSON.stringify(j);
+                  const n = numFrom(s);
+                  if (typeof n === 'number') return n;
+                }
+              }
+              // ytInitialPlayerResponse
+              const m2 = txt.match(/ytInitialPlayerResponse\s*=\s*(\{[\s\S]*?\});/);
+              if (m2) {
+                const j = JSON.parse(m2[1]);
+                const s = JSON.stringify(j);
+                const n = numFrom(s);
+                if (typeof n === 'number') return n;
+              }
             }
-          };
-          fr.src = src;
-          document.body.appendChild(fr);
-        });
+          } catch {}
+          return null;
+        }
+
+        async function readViewers(doc, timeoutMs = 20000) {
+          const start = Date.now();
+          let via = null;
+
+          while (Date.now() - start < timeoutMs) {
+            // 1) JSON seeds (fastest when present)
+            const n1 = readFromSeeds(doc);
+            if (typeof n1 === 'number') { via = 'seed-json'; return { viewers: n1, via }; }
+
+            // 2) aria-label on #view-count
+            const vc = doc.getElementById('view-count');
+            const n2 = numFrom(vc?.getAttribute('aria-label'));
+            if (typeof n2 === 'number') { via = 'aria-label'; return { viewers: n2, via }; }
+
+            // 3) span.view-count renderer
+            const span = doc.querySelector('span.view-count.ytd-video-view-count-renderer');
+            const n3 = numFrom(span?.textContent);
+            if (typeof n3 === 'number') { via = 'span.view-count'; return { viewers: n3, via }; }
+
+            // 4) tooltips
+            for (const t of doc.querySelectorAll('#tooltip')) {
+              const n4 = numFrom(t.textContent);
+              if (typeof n4 === 'number') { via = 'tooltip'; return { viewers: n4, via }; }
+            }
+
+            // wait a bit and try again (lets Polymer hydrate on slow CPUs)
+            await new Promise(r => setTimeout(r, 250));
+          }
+          return { viewers: null, via: null };
+        }
+
+        const fr = await ensureIframe(watchUrlInner);
+        const doc = fr.contentDocument || fr.contentWindow?.document;
+        if (!doc) return { title: '', viewers: null, via: null };
+
+        // title is available very early
+        const title =
+          doc.querySelector('meta[property="og:title"]')?.content?.trim() ||
+          doc.querySelector('meta[name="title"]')?.content?.trim() ||
+          (doc.querySelector('title')?.textContent || '').replace(/\s+-\s+YouTube$/,'').trim() || '';
+
+        const { viewers, via } = await readViewers(doc, 20000);
+        return { title, viewers, via };
       }, watchUrl);
     }
 
