@@ -1,37 +1,31 @@
 # syntax=docker/dockerfile:1
 
-# Includes Chromium + system libs Playwright needs
+# Playwright image (Chromium + all deps preinstalled)
 FROM mcr.microsoft.com/playwright:v1.46.0-jammy
 
 WORKDIR /app
 
 ENV NODE_ENV=production \
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
-    PORT=8080
+    PORT=8080 \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# Enable Yarn via Corepack
-RUN corepack enable
+# Install Yarn Classic globally so Corepack won't touch package.json
+RUN npm i -g yarn@1.22.22
 
-# Copy manifest(s) first to leverage Docker layer caching
-# If you use Yarn Berry, also copy .yarnrc.yml and the .yarn directory
+# Copy manifests first to leverage Docker layer cache
 COPY package.json yarn.lock* ./
-# COPY .yarnrc.yml ./
-# COPY .yarn ./.yarn
 
-# Install deps (auto-detect Yarn classic vs Berry)
-RUN bash -lc '\
-  yarn --version && \
-  if [ -f yarn.lock ] && grep -q "__metadata" yarn.lock 2>/dev/null; then \
-    yarn install --immutable; \
-  else \
-    yarn install --frozen-lockfile || yarn install; \
-  fi'
+# Install deps (works for classic lockfiles)
+RUN yarn install --frozen-lockfile || yarn install
 
-# Copy the rest of your app
+# Copy the rest of the app
 COPY . .
 
-# Run as the non-root user shipped with the Playwright image
+# Ensure the runtime user owns the files
+RUN chown -R pwuser:pwuser /app
+
+# Drop privileges (this user is provided by the Playwright base image)
 USER pwuser
 
 EXPOSE 8080
-CMD ["yarn","start"]
+CMD ["yarn", "start"]
