@@ -447,7 +447,7 @@ async function startSession(url, idArg) {
           if (tag === 'yt-live-chat-membership-gifting-event-renderer') {
             const body = (n.textContent||'').replace(/,/g,'');
             const m = body.match(/(?:sent\\s*)?(\\d+)\\D{0,80}(?:gift(?:ed)?\\s*)?memberships?/i)
-                  || body.match(/gift(?:ed)?\\D{0,40}(\\d+)\\D*memberships?/i)
+                  || body.match(/gift(?:ed|ing)?\\D{0,40}(\\d+)\\D*memberships?/i)
                   || body.match(/(\\d+)/);
             return { type:'gift',
               author: deepText('#author-name, #header-subtext, #primary-text', n) || 'Gift',
@@ -640,21 +640,18 @@ async function startSession(url, idArg) {
           push({ type: 'meta', at: Date.now(), videoId, ...merged });
         }
 
+        // STOP polling once we have a numeric viewers value
         if (!viewersFound && typeof merged.viewers === 'number') {
           viewersFound = true;
-          // slow down once we have a steady viewers value
           const sess = sessions.get(id);
-          if (sess) {
-            clearInterval(sess.metaTimer);
-            sess.metaTimer = setInterval(pushMetaFromHTML, 15_000);
-          }
+          if (sess?.metaTimer) { clearInterval(sess.metaTimer); sess.metaTimer = null; }
         }
       } catch {}
     }
 
-    // start fast until viewers are found, then switch to 15s
-    const fast = setInterval(pushMetaFromHTML, 3_000);
-    const s0 = sessions.get(id); if (s0) s0.metaTimer = fast;
+    // Poll every 30s until viewers is found, then stop
+    const mt = setInterval(pushMetaFromHTML, 30_000);
+    const s0 = sessions.get(id); if (s0) s0.metaTimer = mt;
     await pushMetaFromHTML();
 
   } catch (err) {
