@@ -4,71 +4,57 @@ import cors from 'cors';
 import { nanoid } from 'nanoid';
 import { chromium } from 'playwright';
 
-/* ---------------------------- logging controls ---------------------------- */
-const LEVELS = { error:0, warn:1, info:2, debug:3 };
-const LOG_LEVEL    = LEVELS[(process.env.LOG_LEVEL || 'info').toLowerCase()] ?? 2; // error|warn|info|debug
-const PAGE_CONSOLE = (process.env.PAGE_CONSOLE || 'errors').toLowerCase();        // none|errors|all
-const META_VERBOSE = process.env.META_VERBOSE === '1';                             // 1 = verbose meta polls
-const DEDUP_MS     = +(process.env.LOG_DEDUP_MS || 15000);                         // suppress dupes for 15s
+/* ───────────────────────────── logging controls ───────────────────────────── */
+
+const LEVELS = { error: 0, warn: 1, info: 2, debug: 3 };
+const LOG_LEVEL = (LEVELS[(process.env.LOG_LEVEL || 'info').toLowerCase()] ?? 2);
+const PAGE_CONSOLE = (process.env.PAGE_CONSOLE || 'errors').toLowerCase(); // none|errors|all
+const META_VERBOSE = process.env.META_VERBOSE === '1';
+const DEDUP_MS = +(process.env.LOG_DEDUP_MS || 15000);
 
 const ts = () => new Date().toISOString();
 const should = lvl => lvl <= LOG_LEVEL;
+
 const log = {
   error: (...a) => should(0) && console.error(ts(), ...a),
   warn:  (...a) => should(1) && console.warn(ts(), ...a),
   info:  (...a) => should(2) && console.log(ts(), ...a),
   debug: (...a) => should(3) && console.log(ts(), ...a),
+  tag:   (id, ...a) => should(2) && console.log(ts(), `[session ${id}]`, ...a),
 };
-const slog = (id, ...args) => should(2) && console.log(ts(), `[session ${id}]`, ...args);
 
-// noisy browser messages to ignore entirely
 const IGNORE_RX = [
   /Failed to load resource: net::ERR_FAILED/i,
-  /server responded with a status of 403/i,
   /A network error occurred/i,
+  /server responded with a status of 403/i,
   /Failed to get ServiceWorkerRegistration objects/i,
   /requestIdleCallback.*IdleRequestOptions/i,
   /A preload for .* is found, but is not used/i,
   /WebGL-0x/i, // GL driver spam
 ];
 
+const BENIGN_HOSTS_RX =
+  /(^|\.)ytimg\.com$|(^|\.)googlevideo\.com$|(^|\.)gstatic\.com$|(^|\.)google-analytics\.com$/i;
+
 const ABORTED_TYPES = new Set(['image','media','font','stylesheet','preload','prefetch','beacon']);
-const BENIGN_HOSTS_RX = /(^|\.)ytimg\.com$|(^|\.)googlevideo\.com$|(^|\.)gstatic\.com$|(^|\.)google-analytics\.com$/i;
 
 const _dedupSeen = new Map();
-function logDedup(key, fn, ttlMs = 15000) {
+function logDedup(key, fn, ttlMs = DEDUP_MS) {
   const now = Date.now();
-  const hit = _dedupSeen.get(key);
-  if (hit && hit > now) return;
-  _dedupSeen.set(key, now + ttlMs);
-  try { fn(); } finally {
-    // lazy cleanup
-    for (const [k, until] of _dedupSeen) if (until < now) _dedupSeen.delete(k);
-  }
+  const until = (Number(_dedupSeen.get(key)) || 0);
+  if (until > now) return;
+  try { fn(); } finally { _dedupSeen.set(key, now + ttlMs); }
+  for (const [k, u] of _dedupSeen) if (u < now) _dedupSeen.delete(k);
 }
 
-/* ------------------------------ crash logging ------------------------------ */
-process.on('unhandledRejection', e => console.error('[unhandledRejection]', e));
-process.on('uncaughtException', e => console.error('[uncaughtException]', e));
-process.on('SIGTERM', async () => {
-  try {
-    for (const [, s] of sessions) {
-      try {
-        clearInterval(s.metaTimer);
-        clearInterval(s.watchdogTimer);
-        clearInterval(s.idleCheckTimer);
-        if (s.onAutoStop) app.off('autostop', s.onAutoStop);
-      } catch {}
-      await s.page?.close().catch(()=>{});
-      await s.browser?.close().catch(()=>{});
-    }
-  } finally {
-    process.exit(0);
-  }
-});
+const slog = (id, ...args) => should(2) && console.log(ts(), `[session ${id}]`, ...args);
+
+/* ─────────────────────────────── crash logging ────────────────────────────── */
+process.on('unhandledRejection', e => log.error('[unhandledRejection]', e));
+process.on('uncaughtException',  e => log.error('[uncaughtException]', e));
 
 /* --------------------------------- state ---------------------------------- */
-/** id -> { browser, page, sinks:Set<res>, videoId, meta, metaTimer, watchdogTimer, idleCheckTimer, onAutoStop } */
+/** id -> { browser, context, page, sinks:Set<res>, videoId, meta, timers, onAutoStop } */
 const sessions = new Map();
 
 /* ---------------------------- Render-friendly PW --------------------------- */
@@ -116,15 +102,13 @@ async function launchBrowserOnce() {
     let host = '';
     try { host = new URL(req.url()).hostname; } catch {}
 
-    if (t === 'image' || t === 'media' || t === 'font' || t === 'stylesheet' || t === 'preload' || t === 'prefetch' || t === 'beacon') {
-      return route.abort();
-    }
-    if (/doubleclick\.net|googleads|adservice\.google\.com/.test(host)) return route.abort();
+    if (ABORTED_TYPES.has(t)) return route.abort();
+    if (/doubleclick\.net|googleads|adservice\.google\.com/i.test(host)) return route.abort();
     if ((t === 'xhr' || t === 'fetch') && !/(\.|^)youtube\.com$/i.test(host)) return route.abort();
     return route.continue();
   });
 
-  // Disable Service Workers and animations (lower CPU/mem)
+  // Disable Service Workers + animations (lower CPU/mem)
   await context.addInitScript(() => {
     try {
       const sw = navigator.serviceWorker;
@@ -293,14 +277,15 @@ function enrichAndFilter(raw, videoId) {
 async function startSessionDetached(url) {
   const id = nanoid();
   sessions.set(id, {
-    browser: null, page: null,
+    browser: null, context: null, page: null,
     sinks: new Set(), videoId: null, meta: {},
-    metaTimer: null, watchdogTimer: null, idleCheckTimer: null, onAutoStop: null
+    metaTimer: null, metaBusy: false,
+    watchdogTimer: null, idleCheckTimer: null, onAutoStop: null
   });
   startSession(url, id)
-    .then(() => console.log('[session %s] ready', id))
+    .then(() => slog(id, 'ready'))
     .catch(err => {
-      console.error('[session %s] failed', id, err);
+      log.error(`[session ${id}] failed start`, err);
       const s = sessions.get(id);
       if (s) s.error = err?.message || String(err);
     });
@@ -310,61 +295,54 @@ async function startSessionDetached(url) {
 async function startSession(url, idArg) {
   const id = idArg || nanoid();
   const { live, replay, watch, videoId } = toPopoutUrl(url);
+  slog(id, 'start', { live, replay, watch, videoId });
 
   let browser, context, page;
   try {
     ({ browser, context, page } = await launchBrowserWithRetry(2));
 
     sessions.set(id, {
-      browser, page,
+      browser, context, page,
       sinks: (sessions.get(id)?.sinks) || new Set(),
       videoId, meta: {},
-      metaTimer: null, watchdogTimer: null, idleCheckTimer: null, onAutoStop: null
+      metaTimer: null, metaBusy: false,
+      watchdogTimer: null, idleCheckTimer: null, onAutoStop: null
     });
 
-    // --- quiet, useful logging only ---
+    /* ── page log filtering ── */
+    page.on('console', msg => {
+      if (PAGE_CONSOLE === 'none') return;
+      const type = msg.type();
+      if (PAGE_CONSOLE === 'errors' && type !== 'error') return;
+      const text = msg.text() || '';
+      if (IGNORE_RX.some(rx => rx.test(text))) return;
+      const host = (text.match(/https?:\/\/([^/\s]+)/i) || [,''])[1];
+      if (host && BENIGN_HOSTS_RX.test(host)) return;
+
+      logDedup(`console|${type}|${text.slice(0,200)}`, () => {
+        log.warn(`[session ${id}] page console ${type}: ${text.slice(0,300)}`);
+      });
+    });
+
     page.on('pageerror', e => {
       const text = String(e?.message || e || '');
-      if (IGNORE_RX.some(rx => rx.test(text))) return;     // ignore known noise
-      logDedup(`pageerror:${text.slice(0,200)}`, () => {
-        console.warn(ts(), `[session ${id}] pageerror: ${text}`);
-      });
-    });
-
-    page.on('console', msg => {
-      const type = msg.type();                 // 'log','warning','error', etc.
-      if (!/^(warning|error)$/i.test(type)) return;
-      const text = msg.text();
       if (IGNORE_RX.some(rx => rx.test(text))) return;
-      logDedup(`console:${type}:${text.slice(0,200)}`, () => {
-        console.warn(ts(), `[session ${id}] page console ${type}:`, text);
-      });
+      logDedup(`pageerror|${text.slice(0,200)}`, () =>
+        log.warn(`[session ${id}] pageerror: ${text}`)
+      );
     });
 
-    // Only log unexpected request failures (not our own aborts or benign CDNs)
     page.on('requestfailed', req => {
       try {
+        const t   = req.resourceType();
+        if (ABORTED_TYPES.has(t)) return;
         const url = req.url();
-        const { hostname } = new URL(url);
-        const rtype = req.resourceType();
-        const failure = req.failure()?.errorText || '';
-
-        // Ignore failures we caused by aborting heavy resources
-        if (ABORTED_TYPES.has(rtype) && /ERR_FAILED/i.test(failure)) return;
-
-        // Ignore common YT/CDN noise
-        if (BENIGN_HOSTS_RX.test(hostname) && /403|ERR_FAILED|blocked|aborted/i.test(failure)) return;
-
-        const key = `reqfail:${hostname}:${rtype}:${failure}`;
-        logDedup(key, () => {
-          console.warn(
-            ts(),
-            `[session ${id}] requestfailed ${rtype} ${hostname} :: ${failure}`
-          );
-        });
-      } catch {
-        /* ignore url parse issues */
-      }
+        const host = (url.match(/^https?:\/\/([^/]+)/i) || [,''])[1];
+        if (host && BENIGN_HOSTS_RX.test(host)) return;
+        const err = req.failure()?.errorText || 'unknown';
+        if (IGNORE_RX.some(rx => rx.test(err))) return;
+        log.info(`[session ${id}] requestfailed ${t}: ${err} → ${url}`);
+      } catch {}
     });
 
     const push = (payload) => {
@@ -395,7 +373,12 @@ async function startSession(url, idArg) {
         const s = sessions.get(sessionId);
         if (!s) return;
         if (s.sinks.size === 0) {
-          if (!timer) timer = setTimeout(() => app.emit('autostop', sessionId), IDLE_MS);
+          if (!timer) {
+            timer = setTimeout(() => {
+              slog(sessionId, 'idle: no clients for 60s -> autostop');
+              app.emit('autostop', sessionId);
+            }, IDLE_MS);
+          }
         } else if (timer) {
           clearTimeout(timer); timer = null;
         }
@@ -407,11 +390,13 @@ async function startSession(url, idArg) {
     const onAutoStop = async (sid) => {
       if (sid !== id) return;
       const s = sessions.get(sid); if (!s) return;
+      slog(id, 'autostop: cleaning up');
       try {
         clearInterval(s.metaTimer);
         clearInterval(s.watchdogTimer);
         clearInterval(s.idleCheckTimer);
         await s.page?.close().catch(()=>{});
+        await s.context?.close?.().catch(()=>{});
         await s.browser?.close().catch(()=>{});
       } finally {
         app.off('autostop', s.onAutoStop);
@@ -428,13 +413,16 @@ async function startSession(url, idArg) {
         const lastInPage = await page.evaluate(() => window.__lastPushAt || 0);
         const stale = Date.now() - Math.max(lastChatAt, lastInPage);
         if (stale > 30000) {
+          slog(id, 'watchdog: stale chat, nudging page');
           await page.evaluate(() => {
             window.dispatchEvent(new Event('yt-navigate-finish'));
             const e = document.querySelector('yt-live-chat-app') || document.body;
             if (e && e.scrollTo) e.scrollTo(0, 1e9);
           });
         }
-      } catch {}
+      } catch (e) {
+        slog(id, 'watchdog error', String(e?.message || e));
+      }
     }, 10000);
     const sWD = sessions.get(id); if (sWD) sWD.watchdogTimer = wd;
 
@@ -442,7 +430,6 @@ async function startSession(url, idArg) {
     async function injectObserver() {
       const script = `
       (() => {
-        // Only in the popout (top window). Prevents firing from any hidden iframes.
         if (window.top !== window) return;
         if (window.__CHAT_OBSERVER_INSTALLED) return;
         window.__CHAT_OBSERVER_INSTALLED = true;
@@ -450,7 +437,6 @@ async function startSession(url, idArg) {
         const now = () => Date.now();
         window.__lastPushAt = now();
 
-        // Deep query util that walks shadow roots — reliable for YT's DOM.
         function queryAllDeep(sel, root=document) {
           const out=[]; const seen=new Set(); const stack=[root];
           while (stack.length) {
@@ -475,7 +461,6 @@ async function startSession(url, idArg) {
           return queryDeep('#items') || queryDeep('#contents') || null;
         }
 
-        // Batch across the JS boundary (cuts overhead a lot)
         const q = [];
         let flushId = 0;
         const publish = (obj) => {
@@ -535,7 +520,7 @@ async function startSession(url, idArg) {
           if (tag === 'yt-live-chat-membership-gifting-event-renderer') {
             const body = (n.textContent||'').replace(/,/g,'');
             const m = body.match(/(?:sent\\s*)?(\\d+)\\D{0,80}(?:gift(?:ed)?\\s*)?memberships?/i)
-                  || body.match(/gift(?:ed|ing)?\\D{0,40}(\\d+)\\D*memberships?/i)
+                  || body.match(/gift(?:ed)?\\D{0,40}(\\d+)\\D*memberships?/i)
                   || body.match(/(\\d+)/);
             return { type:'gift',
               author: deepText('#author-name, #header-subtext, #primary-text', n) || 'Gift',
@@ -618,7 +603,6 @@ async function startSession(url, idArg) {
               (window.requestIdleCallback || setTimeout)(() => sweep(itemsRoot), 500);
             }
           });
-          // subtree:true keeps reliability; batching above keeps CPU reasonable
           mo.observe(itemsRoot, { childList:true, subtree:true });
           publish({ type:'status', message:'observer-started', timestamp: now() });
           return true;
@@ -655,140 +639,101 @@ async function startSession(url, idArg) {
     await page.waitForSelector('yt-live-chat-app, yt-live-chat-renderer', { timeout: 45_000 }).catch(()=>{});
     await injectObserver();
 
-    /* -------------------- watch page metadata (ephemeral iframe) -------------------- */
-    async function scrapeWatchMetaViaIframe(pageObj, watchUrl) {
-      return await pageObj.evaluate(async (watchUrlInner) => {
-        const addParams = (url) => {
-          const u = new URL(url);
-          if (!u.searchParams.has('hl'))    u.searchParams.set('hl', 'en');
-          if (!u.searchParams.has('bpctr')) u.searchParams.set('bpctr', '9999999999');
-          return u.toString();
-        };
+    /* -------------------- watch meta (keep page alive until viewers) ------------- */
 
-        // persistent same-origin iframe (reused across polls)
-        async function ensureIframe(src) {
-          let fr = document.getElementById('__watch_iframe');
-          if (!fr || !fr.contentDocument) {
-            fr = document.createElement('iframe');
-            fr.id = '__watch_iframe';
-            fr.sandbox = 'allow-same-origin allow-scripts';
-            fr.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:360px;height:240px;visibility:hidden;pointer-events:none;';
-            document.body.appendChild(fr);
-          }
-          const next = addParams(src);
-          if (fr.src !== next) {
-            await new Promise(res => {
-              const done = () => res();
-              fr.addEventListener('load', done, { once: true });
-              fr.src = next;
-            });
-          } else {
-            // already loaded once; give the page a moment to settle
-            await new Promise(r => setTimeout(r, 100));
-          }
-          return fr;
-        }
+    const META_INTERVAL_MS   = +(process.env.META_INTERVAL_MS || 30_000);
+    const META_WAIT_TICK_MS  = +(process.env.META_WAIT_TICK_MS || 3_000);
+    const META_WAIT_MAX_MS   = +(process.env.META_WAIT_MAX_MS || 0); // 0 = infinite
 
-        const numFrom = (s) => {
-          if (!s) return null;
-          const m = String(s).replace(/[.,]/g,'').match(/(\d[\d\s]*)\s*watching\s+now/i);
-          return m ? parseInt(m[1].replace(/\s+/g,''), 10) : null;
-        };
+    function addWatchParams(url) {
+      const u = new URL(url);
+      if (!u.searchParams.has('hl'))    u.searchParams.set('hl', 'en');
+      if (!u.searchParams.has('bpctr')) u.searchParams.set('bpctr', '9999999999');
+      return u.toString();
+    }
 
-        function readFromSeeds(doc) {
-          try {
-            // Find the script tags that hold ytInitialData / ytInitialPlayerResponse
-            const scripts = [...doc.querySelectorAll('script')].map(s => s.textContent || '');
-            for (const txt of scripts) {
-              // ytInitialData
-              const i = txt.indexOf('ytInitialData');
-              if (i >= 0) {
-                const m = txt.match(/ytInitialData\s*=\s*(\{[\s\S]*?\});/);
-                if (m) {
-                  const j = JSON.parse(m[1]);
-                  // Look for a "watching now" string anywhere
-                  const s = JSON.stringify(j);
-                  const n = numFrom(s);
-                  if (typeof n === 'number') return n;
-                }
-              }
-              // ytInitialPlayerResponse
-              const m2 = txt.match(/ytInitialPlayerResponse\s*=\s*(\{[\s\S]*?\});/);
-              if (m2) {
-                const j = JSON.parse(m2[1]);
-                const s = JSON.stringify(j);
-                const n = numFrom(s);
-                if (typeof n === 'number') return n;
-              }
-            }
-          } catch {}
-          return null;
-        }
+    async function awaitMetaFromNewPage(ctx, watchUrl, idForLog) {
+      const p = await ctx.newPage();
+      const started = Date.now();
+      try {
+        p.setDefaultNavigationTimeout(35_000);
+        await p.goto(addWatchParams(watchUrl), { waitUntil: 'domcontentloaded' });
+        let title = '', viewers = null, via = null;
 
-        async function readViewers(doc, timeoutMs = 20000) {
-          const start = Date.now();
-          let via = null;
+        // poll inside this page until we have viewers (or we hit an optional cap)
+        const deadline = META_WAIT_MAX_MS > 0 ? (started + META_WAIT_MAX_MS) : Infinity;
+        let nextVerboseLog = started;
 
-          while (Date.now() - start < timeoutMs) {
-            // 1) JSON seeds (fastest when present)
-            const n1 = readFromSeeds(doc);
-            if (typeof n1 === 'number') { via = 'seed-json'; return { viewers: n1, via }; }
+        while (viewers == null && Date.now() < deadline) {
+          const out = await p.evaluate(() => {
+            const toNum = s => {
+              if (!s) return null;
+              const m = String(s).replace(/[.,]/g,'').match(/(\d[\d\s]*)\s*watching\s+now/i);
+              return m ? parseInt(m[1].replace(/\s+/g,''), 10) : null;
+            };
 
-            // 2) aria-label on #view-count
-            const vc = doc.getElementById('view-count');
-            const n2 = numFrom(vc?.getAttribute('aria-label'));
-            if (typeof n2 === 'number') { via = 'aria-label'; return { viewers: n2, via }; }
+            const doc = document;
+            const titleNow =
+              doc.querySelector('meta[property="og:title"]')?.content?.trim() ||
+              doc.querySelector('meta[name="title"]')?.content?.trim() ||
+              (doc.querySelector('title')?.textContent || '').replace(/\s+-\s+YouTube$/,'').trim() || '';
 
-            // 3) span.view-count renderer
-            const span = doc.querySelector('span.view-count.ytd-video-view-count-renderer');
-            const n3 = numFrom(span?.textContent);
-            if (typeof n3 === 'number') { via = 'span.view-count'; return { viewers: n3, via }; }
+            let viewersNow = null, viaNow = null;
 
-            // 4) tooltips
             for (const t of doc.querySelectorAll('#tooltip')) {
-              const n4 = numFrom(t.textContent);
-              if (typeof n4 === 'number') { via = 'tooltip'; return { viewers: n4, via }; }
+              const n = toNum(t.textContent);
+              if (n != null) { viewersNow = n; viaNow = 'tooltip'; break; }
+            }
+            if (viewersNow == null) {
+              const span = doc.querySelector('span.view-count.ytd-video-view-count-renderer');
+              const n = toNum(span?.textContent);
+              if (n != null) { viewersNow = n; viaNow = 'span.view-count'; }
+            }
+            if (viewersNow == null) {
+              const vc = doc.getElementById('view-count');
+              const n = toNum(vc?.getAttribute('aria-label'));
+              if (n != null) { viewersNow = n; viaNow = 'aria-label'; }
             }
 
-            // wait a bit and try again (lets Polymer hydrate on slow CPUs)
-            await new Promise(r => setTimeout(r, 250));
+            return { titleNow, viewersNow, viaNow };
+          });
+
+          if (out.titleNow) title = out.titleNow;
+          if (typeof out.viewersNow === 'number') { viewers = out.viewersNow; via = out.viaNow; break; }
+
+          const now = Date.now();
+          if (META_VERBOSE && now >= nextVerboseLog + 30_000) {
+            slog(idForLog, `meta: waiting for viewers… (${Math.round((now - started)/1000)}s)`);
+            nextVerboseLog = now;
           }
-          return { viewers: null, via: null };
+
+          await p.waitForTimeout(META_WAIT_TICK_MS);
         }
 
-        const fr = await ensureIframe(watchUrlInner);
-        const doc = fr.contentDocument || fr.contentWindow?.document;
-        if (!doc) return { title: '', viewers: null, via: null };
-
-        // title is available very early
-        const title =
-          doc.querySelector('meta[property="og:title"]')?.content?.trim() ||
-          doc.querySelector('meta[name="title"]')?.content?.trim() ||
-          (doc.querySelector('title')?.textContent || '').replace(/\s+-\s+YouTube$/,'').trim() || '';
-
-        const { viewers, via } = await readViewers(doc, 20000);
-        return { title, viewers, via };
-      }, watchUrl);
+        const elapsed = Date.now() - started;
+        if (META_VERBOSE) slog(idForLog, `meta page ${viewers==null?'gave up':'found viewers'} after ${elapsed}ms ${viewers!=null?`via=${via}`:''}`);
+        return { title, viewers, via, elapsed };
+      } finally {
+        // IMPORTANT: only close when we exit (either viewers obtained or optional cap hit)
+        await p.close().catch(()=>{});
+      }
     }
 
     let lastMeta = { title: undefined, viewers: undefined };
-    let viewersFound = false;
-    let metaPollCount = 0;
+    const sMeta = sessions.get(id); sMeta.meta = lastMeta;
 
-    async function pushMetaFromHTML() {
-      const attempt = ++metaPollCount;
-      if (META_VERBOSE) slog(id, `meta poll #${attempt} (30s cadence until viewers found)`);
+    const pollMeta = async () => {
+      const s = sessions.get(id);
+      if (!s || s.metaBusy) return;
+      s.metaBusy = true;
       try {
-        const { title, viewers, via } = await scrapeWatchMetaViaIframe(page, watch);
-
-        if (META_VERBOSE) slog(id, `meta poll #${attempt} result`, { title: title ? `[len:${title.length}]` : '', viewers, via });
+        const { title, viewers, via } = await awaitMetaFromNewPage(s.context, watch, id);
 
         const merged = {
           title:   title && title.length ? title : lastMeta.title,
           viewers: (typeof viewers === 'number') ? viewers : lastMeta.viewers
         };
 
-        const s = sessions.get(id); if (!s) return;
         s.meta = merged;
 
         const changed =
@@ -798,36 +743,29 @@ async function startSession(url, idArg) {
 
         if (changed) {
           lastMeta = merged;
-          slog(id, `meta updated -> viewers:${merged.viewers} titleLen:${(merged.title||'').length}`);
           push({ type: 'meta', at: Date.now(), videoId, ...merged });
-        }
-
-        // STOP polling once we have a numeric viewers value
-        if (!viewersFound && typeof merged.viewers === 'number') {
-          viewersFound = true;
-          const sess = sessions.get(id);
-          if (sess?.metaTimer) {
-            clearInterval(sess.metaTimer);
-            sess.metaTimer = null;
-            slog(id, `metaTimer cleared — viewers found (${merged.viewers})`);
-          }
-        } else {
-          if (META_VERBOSE) slog(id, 'meta loop scheduled in 30s');
+          slog(id, `meta updated -> viewers:${merged.viewers} titleLen:${(merged.title||'').length} ${via?`via:${via}`:''}`);
+        } else if (META_VERBOSE) {
+          slog(id, `meta unchanged (titleLen:${(merged.title||'').length} viewers:${merged.viewers})`);
         }
       } catch (e) {
-        slog(id, `meta poll #${attempt} error`, String(e?.message || e));
+        slog(id, `meta error`, String(e?.message || e));
+      } finally {
+        const s2 = sessions.get(id);
+        if (s2) s2.metaBusy = false;
       }
-    }
+    };
 
-    // Poll every 30s until viewers is found, then stop
-    const mt = setInterval(pushMetaFromHTML, 30_000);
+    // kick and schedule; each cycle will *block until viewers are seen* (or optional cap) then close the tiny page
+    await pollMeta();
+    const mt = setInterval(pollMeta, META_INTERVAL_MS);
     const s0 = sessions.get(id); if (s0) s0.metaTimer = mt;
-    slog(id, 'metaTimer started @30s');
-    await pushMetaFromHTML();
+    slog(id, `meta polling started @${META_INTERVAL_MS}ms (tick=${META_WAIT_TICK_MS}ms, max=${META_WAIT_MAX_MS||'∞'}ms)`);
 
   } catch (err) {
-    console.error(ts(), `[session ${id}] fatal`, err);
+    log.error(`[session ${id}] fatal`, err);
     try { await page?.close(); } catch {}
+    try { await context?.close?.(); } catch {}
     try { await browser?.close(); } catch {}
     sessions.delete(id);
     throw err;
@@ -840,18 +778,18 @@ function activeSessionCount() {
 }
 
 app.post('/start', async (req, res) => {
-  if (activeSessionCount() >= 1) {
+  if (activeSessionCount() >= 2) {
     return res.status(429).json({ error: 'too_many_sessions' });
   }
   try {
     const { url } = req.body || {};
     if (!url) return res.status(400).json({ error: 'Missing url' });
 
-    console.log(ts(), '[POST /start] url=', url);
+    log.info('[POST /start] url=', url);
     const sessionId = await startSessionDetached(url);
     return res.json({ sessionId });
   } catch (e) {
-    console.error(ts(), '[POST /start] error:', e);
+    log.error('[POST /start] error:', e);
     return res.status(500).json({ error: 'failed_to_start', reason: e?.message || String(e) });
   }
 });
@@ -869,7 +807,7 @@ app.get('/events/:id', (req, res) => {
   res.flushHeaders?.();
   res.write('retry: 5000\n\n');
 
-  if (should(3)) slog(req.params.id, `SSE open; sinks before=${s.sinks.size}`);
+  slog(req.params.id, `SSE open; sinks before=${s.sinks.size}`);
   res.write(`data: ${JSON.stringify({ type:'Connection Established', id:req.params.id, videoId: s.videoId })}\n\n`);
   if (s.meta && (s.meta.title || s.meta.viewers !== undefined)) {
     res.write(`data: ${JSON.stringify({ type:'meta', at: Date.now(), videoId: s.videoId, ...s.meta })}\n\n`);
@@ -877,11 +815,11 @@ app.get('/events/:id', (req, res) => {
 
   const hb = setInterval(() => res.write(':\n\n'), 15000);
   s.sinks.add(res);
-  if (should(3)) slog(req.params.id, `SSE registered; sinks now=${s.sinks.size}`);
+  slog(req.params.id, `SSE registered; sinks now=${s.sinks.size}`);
   req.on('close', () => {
     clearInterval(hb);
     s.sinks.delete(res);
-    if (should(3)) slog(req.params.id, `SSE closed; sinks now=${s.sinks.size}`);
+    slog(req.params.id, `SSE closed; sinks now=${s.sinks.size}`);
   });
 });
 
@@ -895,6 +833,7 @@ app.post('/stop/:id', async (req, res) => {
     clearInterval(s.idleCheckTimer);
     if (s.onAutoStop) app.off('autostop', s.onAutoStop);
     await s.page?.close().catch(()=>{});
+    await s.context?.close?.().catch(()=>{});
     await s.browser?.close().catch(()=>{});
   } finally {
     sessions.delete(req.params.id);
@@ -904,4 +843,22 @@ app.post('/stop/:id', async (req, res) => {
 
 /* ---------------------------------- server --------------------------------- */
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(ts(), `Scraper listening on http://localhost:${PORT}`));
+const srv = app.listen(PORT, () => log.info(`Scraper listening on http://localhost:${PORT}`));
+
+process.on('SIGTERM', async () => {
+  try {
+    for (const [, s] of sessions) {
+      try {
+        clearInterval(s.metaTimer);
+        clearInterval(s.watchdogTimer);
+        clearInterval(s.idleCheckTimer);
+        if (s.onAutoStop) app.off('autostop', s.onAutoStop);
+      } catch {}
+      await s.page?.close().catch(()=>{});
+      await s.context?.close?.().catch(()=>{});
+      await s.browser?.close().catch(()=>{});
+    }
+  } finally {
+    srv.close(()=>process.exit(0));
+  }
+});
