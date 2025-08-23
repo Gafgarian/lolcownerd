@@ -4,6 +4,10 @@ import cors from 'cors';
 import { nanoid } from 'nanoid';
 import { chromium } from 'playwright';
 
+/* ------------------------------ tiny logger ------------------------------- */
+const ts = () => new Date().toISOString();
+const slog = (id, ...args) => console.log(ts(), `[session ${id}]`, ...args);
+
 /* ------------------------------ crash logging ------------------------------ */
 process.on('unhandledRejection', e => console.error('[unhandledRejection]', e));
 process.on('uncaughtException', e => console.error('[uncaughtException]', e));
@@ -277,6 +281,15 @@ async function startSession(url, idArg) {
       sinks: (sessions.get(id)?.sinks) || new Set(),
       videoId, meta: {},
       metaTimer: null, watchdogTimer: null, idleCheckTimer: null, onAutoStop: null
+    });
+
+    // surface browser-side problems in prod logs
+    page.on('pageerror', e => console.warn(ts(), `[session ${id}] pageerror:`, e?.message || e));
+    page.on('console', msg => {
+      const t = msg.type();
+      if (t === 'error' || t === 'warning') {
+        console.log(ts(), `[session ${id}] page console ${t}:`, msg.text());
+      }
     });
 
     const push = (payload) => {
@@ -553,12 +566,15 @@ async function startSession(url, idArg) {
       `;
       await page.addInitScript(script);
       await page.evaluate(script);
+      slog(id, 'chat observer injected');
     }
 
     try {
       await page.goto(live, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+      slog(id, 'navigated to live chat');
     } catch {
       await page.goto(replay, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+      slog(id, 'live failed, navigated to replay chat');
     }
     await clickConsentIfPresent(page);
     await page.waitForSelector('yt-live-chat-app, yt-live-chat-renderer', { timeout: 45_000 }).catch(()=>{});
@@ -586,7 +602,7 @@ async function startSession(url, idArg) {
           fr.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:320px;height:240px;visibility:hidden;pointer-events:none;';
           const cleanup = () => { try { fr.src = 'about:blank'; } catch {} fr.remove(); };
 
-          const timer = setTimeout(() => { cleanup(); resolve({ title:'', viewers:null }); }, 12000);
+          const timer = setTimeout(() => { cleanup(); resolve({ title:'', viewers:null, via:null }); }, 12000);
           fr.onload = () => {
             try {
               const doc = fr.contentDocument || fr.contentWindow?.document;
@@ -595,18 +611,18 @@ async function startSession(url, idArg) {
                 doc.querySelector('meta[name="title"]')?.content?.trim() ||
                 (doc.querySelector('title')?.textContent || '').replace(/\s+-\s+YouTube$/,'').trim() || '';
 
-              let viewers = null;
-              for (const t of doc.querySelectorAll('#tooltip')) { viewers = toNum(t.textContent); if (viewers != null) break; }
-              if (viewers == null) viewers = toNum(doc.querySelector('span.view-count.ytd-video-view-count-renderer')?.textContent);
-              if (viewers == null) viewers = toNum(doc.getElementById('view-count')?.getAttribute('aria-label'));
+              let viewers = null, via = null;
+              for (const t of doc.querySelectorAll('#tooltip')) { const n = toNum(t.textContent); if (n != null) { viewers = n; via = 'tooltip'; break; } }
+              if (viewers == null) { const n = toNum(doc.querySelector('span.view-count.ytd-video-view-count-renderer')?.textContent); if (n != null) { viewers = n; via = 'span.view-count'; } }
+              if (viewers == null) { const n = toNum(doc.getElementById('view-count')?.getAttribute('aria-label')); if (n != null) { viewers = n; via = 'aria-label'; } }
 
               clearTimeout(timer);
               cleanup();
-              resolve({ title, viewers });
+              resolve({ title, viewers, via });
             } catch {
               clearTimeout(timer);
               cleanup();
-              resolve({ title:'', viewers:null });
+              resolve({ title:'', viewers:null, via:null });
             }
           };
           fr.src = src;
@@ -617,10 +633,15 @@ async function startSession(url, idArg) {
 
     let lastMeta = { title: undefined, viewers: undefined };
     let viewersFound = false;
+    let metaPollCount = 0;
 
     async function pushMetaFromHTML() {
+      const attempt = ++metaPollCount;
+      slog(id, `meta poll #${attempt} (looping every 30s until viewers found)`);
       try {
-        const { title, viewers } = await scrapeWatchMetaViaIframe(page, watch);
+        const { title, viewers, via } = await scrapeWatchMetaViaIframe(page, watch);
+
+        slog(id, `meta poll #${attempt} result`, { title: title ? `[len:${title.length}]` : '', viewers, via: via || 'fetch' });
 
         const merged = {
           title:   title && title.length ? title : lastMeta.title,
@@ -637,6 +658,7 @@ async function startSession(url, idArg) {
 
         if (changed) {
           lastMeta = merged;
+          slog(id, `meta updated -> viewers:${merged.viewers} titleLen:${(merged.title||'').length}`);
           push({ type: 'meta', at: Date.now(), videoId, ...merged });
         }
 
@@ -644,17 +666,27 @@ async function startSession(url, idArg) {
         if (!viewersFound && typeof merged.viewers === 'number') {
           viewersFound = true;
           const sess = sessions.get(id);
-          if (sess?.metaTimer) { clearInterval(sess.metaTimer); sess.metaTimer = null; }
+          if (sess?.metaTimer) {
+            clearInterval(sess.metaTimer);
+            sess.metaTimer = null;
+            slog(id, `metaTimer cleared — viewers found (${merged.viewers})`);
+          }
+        } else {
+          slog(id, 'meta loop scheduled in 30s');
         }
-      } catch {}
+      } catch (e) {
+        slog(id, `meta poll #${attempt} error`, String(e?.message || e));
+      }
     }
 
     // Poll every 30s until viewers is found, then stop
     const mt = setInterval(pushMetaFromHTML, 30_000);
     const s0 = sessions.get(id); if (s0) s0.metaTimer = mt;
+    slog(id, 'metaTimer started @30s');
     await pushMetaFromHTML();
 
   } catch (err) {
+    console.error(ts(), `[session ${id}] fatal`, err);
     try { await page?.close(); } catch {}
     try { await browser?.close(); } catch {}
     sessions.delete(id);
@@ -675,11 +707,11 @@ app.post('/start', async (req, res) => {
     const { url } = req.body || {};
     if (!url) return res.status(400).json({ error: 'Missing url' });
 
-    console.log('[POST /start] url=', url);
+    console.log(ts(), '[POST /start] url=', url);
     const sessionId = await startSessionDetached(url);
     return res.json({ sessionId });
   } catch (e) {
-    console.error('[POST /start] error:', e);
+    console.error(ts(), '[POST /start] error:', e);
     return res.status(500).json({ error: 'failed_to_start', reason: e?.message || String(e) });
   }
 });
@@ -697,6 +729,7 @@ app.get('/events/:id', (req, res) => {
   res.flushHeaders?.();
   res.write('retry: 5000\n\n');
 
+  slog(req.params.id, `SSE open; sinks before=${s.sinks.size}`);
   res.write(`data: ${JSON.stringify({ type:'Connection Established', id:req.params.id, videoId: s.videoId })}\n\n`);
   if (s.meta && (s.meta.title || s.meta.viewers !== undefined)) {
     res.write(`data: ${JSON.stringify({ type:'meta', at: Date.now(), videoId: s.videoId, ...s.meta })}\n\n`);
@@ -704,13 +737,19 @@ app.get('/events/:id', (req, res) => {
 
   const hb = setInterval(() => res.write(':\n\n'), 15000);
   s.sinks.add(res);
-  req.on('close', () => { clearInterval(hb); s.sinks.delete(res); });
+  slog(req.params.id, `SSE registered; sinks now=${s.sinks.size}`);
+  req.on('close', () => {
+    clearInterval(hb);
+    s.sinks.delete(res);
+    slog(req.params.id, `SSE closed; sinks now=${s.sinks.size}`);
+  });
 });
 
 app.post('/stop/:id', async (req, res) => {
   const s = sessions.get(req.params.id);
   if (!s) return res.json({ ok: true });
   try {
+    slog(req.params.id, 'manual stop: cleaning up');
     clearInterval(s.metaTimer);
     clearInterval(s.watchdogTimer);
     clearInterval(s.idleCheckTimer);
@@ -725,4 +764,4 @@ app.post('/stop/:id', async (req, res) => {
 
 /* ---------------------------------- server --------------------------------- */
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`Scraper listening on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(ts(), `Scraper listening on http://localhost:${PORT}`));
