@@ -1,6 +1,6 @@
-# syntax=docker/dockerfile:1.6
+# syntax=docker/dockerfile:1
 
-# Playwright image already includes Chromium + all system libs
+# Includes Chromium + system libs Playwright needs
 FROM mcr.microsoft.com/playwright:v1.46.0-jammy
 
 WORKDIR /app
@@ -9,31 +9,28 @@ ENV NODE_ENV=production \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
     PORT=8080
 
-# Enable Yarn (Corepack is bundled with Node ≥16)
+# Enable Yarn via Corepack
 RUN corepack enable
 
-# Install deps with Yarn, honoring your lockfile
-# If you use Yarn v1 (classic): --frozen-lockfile
-# If you use Yarn Berry (v3+):   --immutable
+# Copy manifest(s) first to leverage Docker layer caching
+# If you use Yarn Berry, also copy .yarnrc.yml and the .yarn directory
 COPY package.json yarn.lock* ./
-RUN --mount=type=cache,target=/root/.yarn \
-    --mount=type=cache,target=/root/.cache/yarn \
-    bash -lc '\
-      yarn --version && \
-      if [ -f yarn.lock ] && grep -q "__metadata" yarn.lock 2>/dev/null; then \
-        yarn install --immutable; \
-      else \
-        yarn install --frozen-lockfile || yarn install; \
-      fi'
+# COPY .yarnrc.yml ./
+# COPY .yarn ./.yarn
+
+# Install deps (auto-detect Yarn classic vs Berry)
+RUN bash -lc '\
+  yarn --version && \
+  if [ -f yarn.lock ] && grep -q "__metadata" yarn.lock 2>/dev/null; then \
+    yarn install --immutable; \
+  else \
+    yarn install --frozen-lockfile || yarn install; \
+  fi'
 
 # Copy the rest of your app
 COPY . .
 
-# (Optional) healthcheck hitting your /healthz
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
-  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT||8080) + '/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))" || exit 1
-
-# Run as the non-root user provided by the Playwright image
+# Run as the non-root user shipped with the Playwright image
 USER pwuser
 
 EXPOSE 8080
