@@ -4,9 +4,40 @@ import cors from 'cors';
 import { nanoid } from 'nanoid';
 import { chromium } from 'playwright';
 
-/* ------------------------------ tiny logger ------------------------------- */
+/* ---------------------------- logging controls ---------------------------- */
+const LEVELS = { error:0, warn:1, info:2, debug:3 };
+const LOG_LEVEL    = LEVELS[(process.env.LOG_LEVEL || 'info').toLowerCase()] ?? 2; // error|warn|info|debug
+const PAGE_CONSOLE = (process.env.PAGE_CONSOLE || 'errors').toLowerCase();        // none|errors|all
+const META_VERBOSE = process.env.META_VERBOSE === '1';                             // 1 = verbose meta polls
+const DEDUP_MS     = +(process.env.LOG_DEDUP_MS || 15000);                         // suppress dupes for 15s
+
 const ts = () => new Date().toISOString();
-const slog = (id, ...args) => console.log(ts(), `[session ${id}]`, ...args);
+const should = lvl => lvl <= LOG_LEVEL;
+const log = {
+  error: (...a) => should(0) && console.error(ts(), ...a),
+  warn:  (...a) => should(1) && console.warn(ts(), ...a),
+  info:  (...a) => should(2) && console.log(ts(), ...a),
+  debug: (...a) => should(3) && console.log(ts(), ...a),
+};
+const slog = (id, ...args) => should(2) && console.log(ts(), `[session ${id}]`, ...args);
+
+// de-dupe helper: prints a line at most once every DEDUP_MS per key
+const _last = new Map();
+function logDedup(key, fn) {
+  const now = Date.now();
+  const prev = _last.get(key) || 0;
+  if (now - prev < DEDUP_MS) return;
+  _last.set(key, now);
+  fn();
+}
+
+// noisy browser messages to ignore entirely
+const IGNORE_RX = [
+  /Failed to load resource: net::ERR_FAILED/i,                        // blocked/aborted requests
+  /requestIdleCallback.*IdleRequestOptions/i,                         // harmless type warning
+  /A preload for .* is found, but is not used/i,
+  /Failed to get ServiceWorkerRegistration objects/i
+];
 
 /* ------------------------------ crash logging ------------------------------ */
 process.on('unhandledRejection', e => console.error('[unhandledRejection]', e));
@@ -283,13 +314,26 @@ async function startSession(url, idArg) {
       metaTimer: null, watchdogTimer: null, idleCheckTimer: null, onAutoStop: null
     });
 
-    // surface browser-side problems in prod logs
-    page.on('pageerror', e => console.warn(ts(), `[session ${id}] pageerror:`, e?.message || e));
+    page.on('pageerror', e => {
+      const text = String(e?.message || e || '');
+      if (IGNORE_RX.some(rx => rx.test(text))) return;
+      logDedup(`pageerror|${text.slice(0,200)}`, () =>
+        log.warn(`[session ${id}] pageerror: ${text}`)
+      );
+    });
+
     page.on('console', msg => {
-      const t = msg.type();
-      if (t === 'error' || t === 'warning') {
-        console.log(ts(), `[session ${id}] page console ${t}:`, msg.text());
-      }
+      if (PAGE_CONSOLE === 'none') return;
+      const type = msg.type();
+      if (PAGE_CONSOLE === 'errors' && type !== 'error') return;
+
+      const text = msg.text();
+      if (IGNORE_RX.some(rx => rx.test(text))) return;
+
+      // de-dupe very chatty repeats
+      logDedup(`console|${type}|${text.slice(0,200)}`, () =>
+        log.info(`[session ${id}] page console ${type}: ${text}`)
+      );
     });
 
     const push = (payload) => {
@@ -637,11 +681,11 @@ async function startSession(url, idArg) {
 
     async function pushMetaFromHTML() {
       const attempt = ++metaPollCount;
-      slog(id, `meta poll #${attempt} (looping every 30s until viewers found)`);
+      if (META_VERBOSE) slog(id, `meta poll #${attempt} (30s cadence until viewers found)`);
       try {
         const { title, viewers, via } = await scrapeWatchMetaViaIframe(page, watch);
 
-        slog(id, `meta poll #${attempt} result`, { title: title ? `[len:${title.length}]` : '', viewers, via: via || 'fetch' });
+        if (META_VERBOSE) slog(id, `meta poll #${attempt} result`, { title: title ? `[len:${title.length}]` : '', viewers, via });
 
         const merged = {
           title:   title && title.length ? title : lastMeta.title,
@@ -672,7 +716,7 @@ async function startSession(url, idArg) {
             slog(id, `metaTimer cleared — viewers found (${merged.viewers})`);
           }
         } else {
-          slog(id, 'meta loop scheduled in 30s');
+          if (META_VERBOSE) slog(id, 'meta loop scheduled in 30s');
         }
       } catch (e) {
         slog(id, `meta poll #${attempt} error`, String(e?.message || e));
@@ -729,7 +773,7 @@ app.get('/events/:id', (req, res) => {
   res.flushHeaders?.();
   res.write('retry: 5000\n\n');
 
-  slog(req.params.id, `SSE open; sinks before=${s.sinks.size}`);
+  if (should(3)) slog(req.params.id, `SSE open; sinks before=${s.sinks.size}`);
   res.write(`data: ${JSON.stringify({ type:'Connection Established', id:req.params.id, videoId: s.videoId })}\n\n`);
   if (s.meta && (s.meta.title || s.meta.viewers !== undefined)) {
     res.write(`data: ${JSON.stringify({ type:'meta', at: Date.now(), videoId: s.videoId, ...s.meta })}\n\n`);
@@ -737,11 +781,11 @@ app.get('/events/:id', (req, res) => {
 
   const hb = setInterval(() => res.write(':\n\n'), 15000);
   s.sinks.add(res);
-  slog(req.params.id, `SSE registered; sinks now=${s.sinks.size}`);
+  if (should(3)) slog(req.params.id, `SSE registered; sinks now=${s.sinks.size}`);
   req.on('close', () => {
     clearInterval(hb);
     s.sinks.delete(res);
-    slog(req.params.id, `SSE closed; sinks now=${s.sinks.size}`);
+    if (should(3)) slog(req.params.id, `SSE closed; sinks now=${s.sinks.size}`);
   });
 });
 
