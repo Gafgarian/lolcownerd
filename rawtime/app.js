@@ -77,7 +77,6 @@ class Engine {
     this.connectionUrl = toDirectDriveUrl(connectionUrl);
     this.connection = new Audio(this.connectionUrl);
     this.connection.preload = 'auto';
-    this.connection.crossOrigin = 'anonymous';
   }
   enqueue(item) {
     this.queue.push(item);
@@ -132,7 +131,7 @@ class Engine {
       const a = new Audio();
       a.preload = 'auto';
       a.src = src;
-      a.crossOrigin = 'anonymous';
+      a.referrerPolicy = 'no-referrer'; 
       let settled = false;
 
       const onEnded = () => { cleanup(); resolve(); };
