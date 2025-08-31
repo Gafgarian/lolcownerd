@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>LCU Grand Prix</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="assets/css/racer.css" />
+</head>
+<body>
+  <!-- Top HUD -->
+  <div class="hud" id="hud">
+    <div class="brand">LCU Grand Prix</div>
+    <div class="hud-spacer"></div>
+    <div class="hud-right">
+      <div class="stats" id="viewerStat">Viewers: <span id="viewerCount">--</span></div>
+      <button id="togglePanel" class="icon-btn" title="Open Panel" aria-expanded="false">☰</button>
+    </div>
+  </div>
+
+  <!-- Track -->
+  <div class="stage">
+    <canvas id="racerCanvas"></canvas>
+  </div>
+
+  <!-- Slide-over panel (overlay; does NOT resize the canvas) -->
+  <aside class="side-panel" id="sidePanel" aria-hidden="true">
+    <div class="side-head">
+      <div class="side-title">Race Panel</div>
+      <a class="ghost-btn" href="garages.html" title="Back to Garages">Garages</a>
+    </div>
+    <div class="side-scroll">
+      <section>
+        <div class="lb-title">Leaderboard</div>
+        <ul id="leaderboardList" class="lb-list"></ul>
+      </section>
+
+      <section class="panel-group">
+        <div class="panel-row">
+          <label for="kartSelect">Kart</label>
+          <select id="kartSelect"></select>
+        </div>
+        <div class="panel-row">
+          <button id="boostBtn">Boost</button>
+          <button id="slowBtn">Slow</button>
+          <button id="resetBtn">Reset Speeds</button>
+        </div>
+        <div class="panel-row">
+          <button id="pauseBtn">Pause</button>
+          <button id="resumeBtn">Resume</button>
+          <button id="randomEventBtn">Random Event</button>
+          <span class="hint">Tip: Use ↑/↓ to boost/slow selected kart.</span>
+        </div>
+      </section>
+    </div>
+  </aside>
+
+  <!-- Car modal -->
+  <div id="carModal" class="modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="carModalTitle">
+      <button class="modal-close" title="Close" data-close>✕</button>
+      <div class="modal-body">
+        <div class="modal-images">
+          <img id="modalSideImg" alt="Car side view" />
+          <img id="modalTopImg" alt="Car overhead view" />
+        </div>
+        <div class="modal-info">
+          <h2 id="carModalTitle"></h2>
+          <div class="stat-line"><span>Position</span><strong id="modalPos">—</strong></div>
+          <div class="stat-line"><span>Lap</span><strong id="modalLap">—</strong></div>
+          <div class="stat-line"><span>Speed</span><strong id="modalSpd">—</strong></div>
+          <div class="stat-line"><span>Boost</span><strong id="modalBoost">—</strong></div>
+
+          <!-- NEW: car stats from cars.json -->
+          <div class="stat-title">Car Stats</div>
+          <div id="modalStatGrid" class="stat-grid"><!-- populated in JS --></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/js/racer.js"></script>
+
+<!-- TEMP fallback for local dev -->
+  <script id="cars-config" type="application/json">
+    {
+      "scale": {
+        "min": 1,
+        "max": 10
+      },
+      "teams": {
+        "cafe":     { "SPD": 4, "ACC": 4, "HAN": 6, "PIT": 4, "END": 4, "RSK": 7 },
+        "reaper":   { "SPD": 9, "ACC": 4, "HAN": 6, "PIT": 5, "END": 3, "RSK": 6 },
+        "test":     { "SPD": 5, "ACC": 5, "HAN": 4, "PIT": 7, "END": 7, "RSK": 5 },
+        "nerd":     { "SPD": 5, "ACC": 6, "HAN": 7, "PIT": 5, "END": 8, "RSK": 7 },
+        "queens":   { "SPD": 8, "ACC": 8, "HAN": 6, "PIT": 3, "END": 7, "RSK": 9 },
+        "live":     { "SPD": 9, "ACC": 10, "HAN": 5, "PIT": 4, "END": 10, "RSK": 2 },
+        "shortbus": { "SPD": 7, "ACC": 7, "HAN": 6, "PIT": 5, "END": 9, "RSK": 2 },
+        "rewind":   { "SPD": 8, "ACC": 8, "HAN": 8, "PIT": 8, "END": 9, "RSK": 1 },
+        "balls":    { "SPD": 6, "ACC": 6, "HAN": 4, "PIT": 6, "END": 6, "RSK": 3 },
+        "aussy":    { "SPD": 5, "ACC": 6, "HAN": 3, "PIT": 6, "END": 9, "RSK": 9 },
+        "chubby":   { "SPD": 2, "ACC": 4, "HAN": 6, "PIT": 5, "END": 2, "RSK": 2 },
+        "nuts":     { "SPD": 1, "ACC": 1, "HAN": 1, "PIT": 1, "END": 1, "RSK": 1 }
+      },
+      "upgrades": {
+        "engine_kit":      { "ACC": 1,  "SPD": 1,   "durationLaps": 0 },
+        "aero_package":    { "HAN": 1,  "SPD": 0.5, "durationLaps": 0 },
+        "pit_drills":      { "PIT": 2,  "durationLaps": 0 },
+        "endurance_pack":  { "END": 2,  "durationLaps": 0 },
+        "risk_map_update": { "RSK": -1, "durationLaps": 0 },
+        "qualy_trim":      { "SPD": 2,  "END": -1,  "durationLaps": 5 },
+        "soft_tyre_set":   { "HAN": 2,  "END": -1,  "durationLaps": 8 }
+      }
+    }
+  </script>
+
+</body>
+</html>

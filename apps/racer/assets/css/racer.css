@@ -1,0 +1,168 @@
+:root{
+  /* Light charcoal page background */
+  --page:#2c2e33;
+  --text:#eef0f4;
+  --muted:#a6abb3;
+  --panel:#1e2028cc;         /* translucent overlay */
+  --panel-border:#3c4155cc;
+  --accent:#7c4dff;
+  --sideW: 360px;
+}
+
+*{box-sizing:border-box}
+html,body{
+  height:100%;margin:0;background:var(--page);color:var(--text);
+  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif
+}
+
+/* ---------- HUD ---------- */
+.hud{display:flex;align-items:center;gap:16px;padding:12px 16px;border-bottom:1px solid #2a2d37;background:#242730}
+.brand{font-weight:800;letter-spacing:.5px}
+.hud-spacer{flex:1}
+.hud-right{display:flex;align-items:center;gap:10px}
+.stats{color:var(--muted)}
+.icon-btn,.ghost-btn{
+  font:inherit;color:var(--text);background:#2a2d37;border:1px solid #34384a;border-radius:8px;padding:8px 10px;cursor:pointer;text-decoration:none
+}
+.icon-btn:hover,.ghost-btn:hover{border-color:var(--accent)}
+/* ----- Header race controls ----- */
+.race-controls{display:flex;align-items:center;gap:10px;justify-content:center;flex:1}
+.start-btn{
+  display:flex;align-items:center;gap:10px;padding:6px 12px;
+  background:#2a2d37;border:1px solid #3b4050;border-radius:10px;
+  color:#eef0f4;cursor:pointer;font-weight:700;letter-spacing:.4px
+}
+.start-btn:hover{border-color:#7c4dff}
+.start-btn .lights{display:flex;gap:6px}
+.light{width:12px;height:12px;border-radius:50%;opacity:.25;box-shadow:0 0 0 1px #000 inset}
+.light.red{background:#ff4747}
+.light.yellow{background:#ffd34a}
+.light.green{background:#2ad66b}
+.light.on{opacity:1;box-shadow:0 0 10px currentColor, 0 0 0 1px #000 inset}
+.pause-btn{
+  padding:6px 10px;border:1px solid #3b4050;border-radius:10px;background:#2a2d37;color:#eef0f4;cursor:pointer;
+}
+.pause-btn:hover{border-color:#7c4dff}
+
+/* ---------- Stage / Canvas ---------- */
+.stage{display:grid;place-items:center;height:calc(100vh - 64px);padding:8px}
+#racerCanvas{
+  display:block;width:100%;height:100%;border-radius:14px;background:#0d0f14;
+  box-shadow:0 2px 20px rgba(0,0,0,.35)
+}
+
+/* ---------- Slide-out Panel (translucent overlay) ---------- */
+.side-panel{
+  position:fixed;top:64px;right:0;height:calc(100vh - 64px);width:var(--sideW);
+  background:var(--panel);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border-left:1px solid var(--panel-border);
+  transform:translateX(100%);transition:transform .25s ease;z-index:20;
+  will-change:transform;
+  display:flex;flex-direction:column;border-top-left-radius:12px;
+}
+body.panel-open .side-panel{transform:none}
+.side-head{display:flex;align-items:center;gap:8px;padding:12px;border-bottom:1px solid var(--panel-border);background:#24273099;position:sticky;top:0;z-index:1;border-top-left-radius:12px}
+.side-title{font-weight:800}
+.side-head .ghost-btn{margin-left:auto}
+.side-scroll{overflow:auto;padding:12px;display:grid;gap:14px}
+
+/* Leaderboard */
+.lb-title{font-weight:700;color:var(--muted);margin:0 0 6px}
+.lb-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.lb-item{
+  display:flex;align-items:center;gap:10px;background:#151724cc;border:1px solid #2d3040cc;
+  border-radius:10px;padding:8px 10px;cursor:pointer
+}
+.lb-item:hover{border-color:var(--accent)}
+.lb-pos{width:22px;text-align:center;color:#9aa0a6}
+.lb-car{width:72px;height:auto;object-fit:contain;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
+.lb-show{font-weight:700;margin-left:2px;margin-right:auto}
+.lb-name{color:#9aa0a6;font-size:12px}
+
+/* Controls */
+.panel-group{display:grid;gap:8px;background:#141722cc;border:1px solid #2d3040cc;border-radius:10px;padding:10px}
+.panel-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+label,select,button{font:inherit;color:var(--text)}
+select,button{background:#2a2d37;border:1px solid #34384a;border-radius:8px;padding:8px 10px}
+button:hover,select:hover{border-color:var(--accent)}
+.hint{color:var(--muted);font-size:12px}
+
+/* ---------- Modal ---------- */
+.modal{position:fixed;inset:0;display:none;z-index:40}
+.modal.show{display:block}
+.modal-backdrop{
+  position:absolute;inset:0;background:rgba(0,0,0,.55);
+  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); /* soften canvas behind */
+}
+.modal-dialog{
+  position:relative;max-width:920px;margin:6vh auto;
+  background:var(--panel); /* translucent like race panel */
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border:1px solid var(--panel-border);
+  border-radius:12px;box-shadow:0 30px 80px rgba(0,0,0,.5)
+}
+.modal-close{
+  position:absolute;right:10px;top:10px;border:1px solid #34384a;background:#2a2d37;color:var(--text);
+  border-radius:8px;padding:6px 10px;cursor:pointer
+}
+.modal-close:hover{border-color:var(--accent)}
+.modal-body{
+  display:flex;gap:18px;align-items:flex-start;padding:18px;flex-wrap:wrap
+}
+.modal-images{display:grid;gap:12px}
+.modal-images #modalSideImg{
+  width:520px;max-width:70vw;height:auto;object-fit:contain;background:#14161c99;
+  border-radius:10px;border:1px solid #2a2d37
+}
+.modal-images #modalTopImg{
+  width:380px;max-width:50vw;height:auto;object-fit:contain;background:#14161c99;
+  border-radius:10px;border:1px solid #2a2d37;justify-self:center
+}
+.modal-info{display:grid;gap:10px;min-width:260px;flex:1}
+.modal-info h2{margin:0 0 6px;font-size:22px}
+.stat-line{
+  display:flex;justify-content:space-between;gap:14px;background:#1b1d25cc;
+  border:1px solid #2d3040;border-radius:8px;padding:8px 10px
+}
+.stat-line span{color:#a6abb3}
+/* Use tabular numbers so timers don't shift width */
+.stat-line strong,.stat-chip .v{
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Modal – small grid for the car’s base stats (from cars.json) */
+.stat-title{
+  margin-top: 10px;
+  font-weight: 600;
+  color: #dbe2f1;
+  opacity: .9;
+}
+.stat-grid{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+.stat-chip{
+  background: #1f232acc;
+  border: 1px solid #2a2f38;
+  border-radius: 8px;
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #cfd6e6;
+}
+.stat-chip .k{opacity:.7;margin-right:6px;}
+.stat-chip .v{font-weight:700;color:#fff}
+
+/* ---------- Responsive tweaks ---------- */
+@media (max-width: 980px){
+  .modal-dialog{margin:4vh 12px}
+  .modal-images #modalSideImg{width:min(460px,70vw)}
+  .modal-images #modalTopImg{width:min(320px,50vw)}
+}
+@media (prefers-reduced-motion: reduce){
+  .side-panel,.modal-dialog{transition:none}
+}

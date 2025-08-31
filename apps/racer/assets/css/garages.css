@@ -1,0 +1,223 @@
+:root{
+  --bg: #161718;                 /* charcoal */
+  --panel: rgba(18,19,20,.88);
+  --panelEdge: rgba(255,255,255,.06);
+  --text: #e7ebf0;
+  --muted: #aeb6bf;
+  --accent: #39c0ff;
+  --radius: 10px;                 /* (reduced) */
+  --shadow: 0 10px 30px rgba(0,0,0,.45);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji;
+}
+
+/* Buttons */
+.btn{
+  appearance:none; border:0; cursor:pointer; color:var(--text);
+  padding:10px 14px; border-radius:calc(var(--radius) - 2px);
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+}
+.btn:hover{box-shadow: inset 0 0 0 1px rgba(255,255,255,.16), 0 8px 24px rgba(0,0,0,.35)}
+.btn-accent{background: linear-gradient(180deg, color-mix(in oklab, var(--accent), white 12%), var(--accent)); color:#021014}
+.icon-btn{
+  width:32px;height:32px;border-radius:calc(var(--radius) - 4px);
+  background: rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.1);
+  color:var(--text); display:grid; place-items:center; cursor:pointer;
+}
+
+.to-track{position:fixed; top:14px; right:14px; z-index:10; text-decoration:none}
+
+/* Sections */
+.page{padding:72px 28px 40px; max-width:1280px; margin:0 auto}
+.section{margin:28px 0}
+.section-title{margin:0 0 14px; font-size:28px; font-weight:800; letter-spacing:.3px}
+.glow{
+  text-shadow: 0 0 12px color-mix(in oklab, var(--accent) 35%, transparent),
+               0 0 24px color-mix(in oklab, var(--accent) 35%, transparent);
+  border-bottom:2px solid color-mix(in oklab, var(--accent) 35%, transparent);
+  padding-bottom:6px;
+}
+
+/* Grid */
+.garage-grid{display:grid; gap:18px; grid-template-columns:repeat(4, minmax(220px,1fr))}
+.crown-grid{grid-template-columns:repeat(2, minmax(220px,1fr)); max-width:720px}
+
+.garage-card{position:relative; border-radius:var(--radius); overflow:hidden;
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  box-shadow: var(--shadow), inset 0 0 0 1px rgba(255,255,255,.06);
+}
+
+/* Door */
+.door{position:relative; width:100%; aspect-ratio:16/11; border:0; cursor:pointer; background:none; border-radius:var(--radius); overflow:hidden}
+
+/* Softer dim for active doors (coming-soon remain darker via locked) */
+.door::before{
+  content:""; position:absolute; inset:0;
+  background: linear-gradient(180deg, rgba(0,0,0,.24), rgba(0,0,0,.28));
+  pointer-events:none; transition:opacity .25s ease;
+}
+.door.locked::before{background:linear-gradient(180deg, rgba(0,0,0,.34), rgba(0,0,0,.44))}
+
+/* spotlight on hover */
+.door::after{
+  content:""; position:absolute; inset:-20% -20%;
+  background: radial-gradient(40% 40% at 50% 35%, rgba(255,255,255,.18), transparent 60%);
+  opacity:0; pointer-events:none; transition:opacity .22s ease;
+}
+
+/* Very important: one transform pipeline driven by --doorY */
+.door-slat{
+  position:absolute; inset:0; background:center/cover no-repeat;
+  --doorY: 0%;
+  transform: translateY(var(--doorY));
+  transition: transform .22s ease;
+  will-change: transform;
+  filter: drop-shadow(0 8px 10px rgba(0,0,0,.35));
+}
+.door-preview{position:absolute; inset:0; background:center/cover no-repeat; filter:brightness(.6) saturate(.9) blur(.5px)}
+
+/* Peek on hover */
+.door:not(.locked):hover .door-slat{ --doorY: -12%; }
+.door:not(.locked):hover::after{ opacity:1 }
+
+/* Prevent :hover from fighting with the click animation */
+.door.opening{
+  pointer-events: none;   /* disables hover while rolling */
+}
+.door.opening::after{ opacity:0; }
+
+/* (Optional fallback) In case you’re not using inline transforms in JS */
+.door.opening .door-slat{
+  transform: translateY(-100%) !important;
+  transition: transform .6s cubic-bezier(.2,.85,.3,1);
+}
+
+/* Click → roll-up fully (same property, longer duration) */
+.garage-card.opening .door-slat{
+  --doorY: -100%;
+  transition-duration: .6s;
+  transition-timing-function: cubic-bezier(.2,.85,.3,1);
+}
+
+/* Coming soon label */
+.badge{
+  position:absolute; left:50%; bottom:10px; transform:translateX(-50%);
+  padding:6px 10px; border-radius:calc(var(--radius) - 4px);
+  background: rgba(0,0,0,.55); color:#fff; font-weight:700; font-size:12px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
+}
+.garage-card.shake{animation:shake .52s both}
+@keyframes shake{
+  10%,90%{transform:translateX(-1px)}
+  20%,80%{transform:translateX(2px)}
+  30%,50%,70%{transform:translateX(-4px)}
+  40%,60%{transform:translateX(4px)}
+}
+
+/* Modal */
+.modal[aria-hidden="true"]{display:none}
+.modal{position:fixed; inset:0; z-index:1000}
+.backdrop{position:absolute; inset:0; background:rgba(0,0,0,.72); backdrop-filter:blur(2px)}
+
+/* 75% size, centered */
+.modal-card{
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:min(75vw, 1400px); height:min(75vh, 900px);
+  background:#0f1011; border:1px solid rgba(255,255,255,.05);
+  border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow);
+}
+
+.icon-btn.close{position:absolute; top:10px; right:10px; z-index:3; width:34px; height:34px; font-size:16px; line-height:1}
+
+/* Scene */
+.scene{position:relative; width:100%; height:100%}
+.bg-img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; filter:saturate(.98) contrast(1.02)}
+
+/* Floor gloss + shadow/reflection base */
+.floor-fx{
+  position:absolute; left:50%; bottom:0px; transform:translateX(-50%);
+  width:72%; height:92px; pointer-events:none; z-index:2;
+  background:
+    radial-gradient(60% 100% at 50% 100%, rgba(255,255,255,.08), transparent 70%),
+    radial-gradient(40% 60% at 50% 100%, rgba(0,0,0,.45), transparent 70%);
+  filter: blur(0.3px);
+}
+
+/* Car + reflection */
+.car-side{
+  position:absolute; left:50%; bottom:35px; transform:translateX(-50%);
+  width:min(70%, 1100px); z-index:3;
+  /* keep a tiny shadow to help separation */
+  filter: drop-shadow(0 40px 20px rgba(0,0,0,.85));
+}
+.car-reflect{
+  position:absolute; left:50%; bottom:-180px; transform:translateX(-50%) scaleY(-1);
+  width:min(70%, 1100px); z-index:2;
+  filter: blur(1px) saturate(.9);
+  /* fade out toward the bottom; webkit mask for Safari */
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,1), rgba(0,0,0,0) 100%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1), rgba(0,0,0,0) 100%);
+}
+
+/* Wrench toggle */
+.icon-btn.wrench{
+  position:absolute; right:14px; bottom:14px; z-index:4;
+  width:42px; height:42px;
+  background: radial-gradient(60% 60% at 50% 40%, rgba(255,255,255,.10), rgba(255,255,255,.05)), rgba(0,0,0,.35);
+  border:1px solid rgba(255,255,255,.12);
+}
+.icon-btn.wrench::before{content:"🛠️"; font-size:18px}
+.icon-btn.wrench:hover::after{
+  content:"UPGRADE"; position:absolute; bottom:48px; right:0;
+  padding:4px 8px; font-size:11px; font-weight:800; letter-spacing:.8px;
+  border-radius:6px; color:#0b1013; background:var(--accent); box-shadow:var(--shadow);
+}
+
+/* Stats panel (overlay) */
+.stats-panel{
+  position:absolute; top:0; right:0; height:100%;
+  width:clamp(280px, 23vw, 420px);
+  transform:translateX(110%); transition:transform .28s ease;
+  background: var(--panel); border-left:1px solid var(--panelEdge);
+  display:flex; flex-direction:column; gap:10px; padding:14px; z-index:5;
+}
+.stats-panel.open{transform:translateX(0)}
+.panel-close{position:absolute; top:10px; right:10px; width:30px; height:30px; line-height:1; font-size:14px}
+
+/* Actions */
+.panel-actions{display:flex; justify-content:center; padding-top:8px}
+.panel-actions .btn{min-width:160px}
+
+/* Overhead bounded */
+.overhead{
+  flex:1; min-height:220px; border-radius:calc(var(--radius) - 2px);
+  background: radial-gradient(120% 120% at 50% 20%, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+  overflow:hidden; display:grid; place-items:center;
+}
+.overhead img{width:100%; height:100%; object-fit:contain; display:block; filter: drop-shadow(0 18px 22px rgba(0,0,0,.55))}
+
+/* Stats */
+.stats-list{
+  border-radius:calc(var(--radius) - 2px); overflow:hidden;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+}
+.stat{display:flex; justify-content:space-between; padding:12px 14px; border-top:1px solid rgba(255,255,255,.06)}
+.stat:first-child{border-top:0}
+.stat span{color:var(--muted)}
+.stat strong{font-variant-numeric:tabular-nums}
+
+@media (max-width:980px){
+  .garage-grid{grid-template-columns:repeat(2, minmax(220px,1fr))}
+  .crown-grid{grid-template-columns:repeat(2, minmax(160px,1fr))}
+  .modal-card{width:min(90vw, 1200px); height:min(82vh, 900px)}
+  .car-side,.car-reflect{width:min(88%, 960px)}
+}
