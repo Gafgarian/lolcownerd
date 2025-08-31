@@ -1,10 +1,10 @@
-/* Streamdeck-styled RawTime soundboard
+/* Streamdeck-styled RawTime soundboard (defensive build)
    - Square tiles, 5 columns (15 rows).
    - Connection 'sting' button always enabled.
    - No numeric labels on tiles.
    - Random pre/post stingers around the main sequence.
    - 1.5s pause between connection intro and the main clip.
-   - No crossOrigin on audio; supports same-host /audio/*.mp3 or Drive download URLs.
+   - Defensive config loading + helpful errors.
 */
 
 const els = {
@@ -16,23 +16,29 @@ const els = {
 };
 
 async function loadConfig() {
-  // Prefer explicit production URL if provided
-  if (window.SOUNDBOARD_CONFIG_URL) {
-    const res = await fetch(window.SOUNDBOARD_CONFIG_URL, { cache: 'no-store' });
-    if (!res.ok) throw new Error('Failed to fetch production config');
+  const tryFetch = async (url) => {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`fetch ${url} -> ${res.status}`);
     return res.json();
+  };
+
+  if (window.SOUNDBOARD_CONFIG_URL) {
+    console.info('config: using explicit', window.SOUNDBOARD_CONFIG_URL);
+    return tryFetch(window.SOUNDBOARD_CONFIG_URL);
   }
-  // Fallbacks
   for (const p of ['config.json', 'config.sample.json']) {
     try {
-      const res = await fetch(p, { cache: 'no-store' });
-      if (res.ok) return await res.json();
-    } catch {}
+      console.info('config: trying', p);
+      const cfg = await tryFetch(p);
+      return cfg;
+    } catch (e) {
+      console.warn('config: miss', p, e);
+    }
   }
-  throw new Error('Missing config');
+  throw new Error('No config.json found next to index.html (and no SOUNDBOARD_CONFIG_URL set).');
 }
 
-// Drive helpers (safe if you still point to Drive)
+// Google Drive helpers (safe if you still point to Drive)
 function getDriveId(url) {
   try {
     const u = new URL(url);
@@ -45,7 +51,9 @@ function getDriveId(url) {
   return null;
 }
 function toDirectDriveUrl(url) {
+  if (!url) return url;
   const id = getDriveId(url);
+  // We prefer "uc?export=download" for <audio> elements.
   return id ? `https://drive.google.com/uc?export=download&id=${id}` : url;
 }
 
@@ -98,24 +106,13 @@ class Engine {
 
   async playSequence(item) {
     markNowPlaying(item);
-    // Randoms before the main audio: 10% then 5%
-    await this.maybeRandom(0.10);
-    await this.maybeRandom(0.05);
-
-    // Connection intro
-    await this.safePlay(this.connectionUrl);
-
-    // 1.5s pause before the main audio
-    await this.wait(1500);
-
-    // Main audio (must succeed, bubbles errors)
-    await this.mustPlay(item.url);
-
-    // Connection outro (no pause afterwards)
-    await this.safePlay(this.connectionUrl);
-
-    // Random after main: 5%
-    await this.maybeRandom(0.05);
+    await this.maybeRandom(0.10); // 10% before
+    await this.maybeRandom(0.05); // then 5% before
+    await this.safePlay(this.connectionUrl); // intro
+    await this.wait(1500); // 1.5s pause
+    await this.mustPlay(item.url); // main
+    await this.safePlay(this.connectionUrl); // outro (no pause after)
+    await this.maybeRandom(0.05); // 5% after
   }
 
   pickRandomUrl() {
@@ -201,33 +198,44 @@ function markNowPlaying(it){ it.state='now'; updateTileVisual(it); }
 function markPlayed(it){ it.state='played'; updateTileVisual(it); }
 function markError(it){ it.state='error'; updateTileVisual(it); }
 
-function buildRandoms(cfg){
+function buildRandoms(cfg, audioDir){
   if (Array.isArray(cfg.randoms) && cfg.randoms.length){
     return cfg.randoms;
   }
-  // Fallback to /audio/random1..4.mp3 (same-origin)
-  const base = (cfg.connectionUrl || '').split('/').slice(0, -1).join('/'); // infer /audio directory
-  const dir = base || 'audio';
+  // Fallback to /audio/random1..4.mp3
+  const dir = audioDir || 'audio';
   return [1,2,3,4].map(i => `${dir}/random${i}.mp3`);
+}
+
+function getAudioDirFrom(url){
+  try{
+    const u = new URL(url, location.href);
+    return u.pathname.split('/').slice(0,-1).join('/') || 'audio';
+  }catch{
+    return 'audio';
+  }
 }
 
 (async function init(){
   try {
     const cfg = await loadConfig();
+    if (!cfg || typeof cfg !== 'object') throw new Error('Config is empty or invalid JSON.');
+
+    // Resolve connection URL from several possible keys
+    const rawConn = cfg.connectionUrl || cfg.connectionURL || cfg.connection || (cfg.connection && cfg.connection.url);
+    if (!rawConn) throw new Error('`connectionUrl` missing in config.json (expected a URL to your CONNECTION.mp3).');
+    const connectionUrl = toDirectDriveUrl(rawConn);
 
     // Build clip list and sort by sizeKB (asc)
     items = (cfg.clips||[]).map((c, idx)=> ({
       idx,
-      url: (c.url || c.href || ''),
+      url: toDirectDriveUrl(c.url || c.href || ''),
       sizeKB: Number(c.sizeKB) || 0,
       state:'ready', el:null, labelEl:null
     })).sort((a,b)=>a.sizeKB - b.sizeKB);
 
-    // Normalize any Drive links if present
-    items.forEach(it => { it.url = toDirectDriveUrl(it.url); });
-
-    randoms = buildRandoms(cfg).map(toDirectDriveUrl);
-    const connectionUrl = toDirectDriveUrl(cfg.connectionUrl);
+    const audioDir = getAudioDirFrom(connectionUrl);
+    randoms = buildRandoms(cfg, audioDir).map(toDirectDriveUrl);
 
     engine = new Engine(connectionUrl, randoms);
 
@@ -242,7 +250,7 @@ function buildRandoms(cfg){
     }
   } catch (e) {
     console.error(e);
-    showNotice('Could not load config. Ensure config.json is served and valid.');
+    showNotice(e.message || 'Could not load config. Ensure config.json is served and valid.');
   }
 })();
 
