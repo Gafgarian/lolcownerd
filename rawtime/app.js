@@ -164,19 +164,30 @@ let randoms = [];
 
 
 function computeTileSize(){
-  // Aim to fit 5 columns x 15 rows without (or with minimal) scroll
-  const cols = 5, rows = 15, gap = 12;
+  // Target layout: 5 rows x 15 columns (75 tiles)
+  const cols = 15, rows = 5, gap = 12;
   const grid = els.grid;
   const footer = document.querySelector('.footer');
-  // Account for page paddings around grid (20px left/right, ~28px bottom)
+  // Available width (page padding ~20px left/right)
   const availableWidth = Math.max(0, window.innerWidth - 40);
+  // Available height between grid top and footer
   const gridTop = grid.getBoundingClientRect().top;
   const footerTop = footer ? footer.getBoundingClientRect().top : window.innerHeight;
   const availableHeight = Math.max(0, footerTop - gridTop - 28);
+
   const sizeByW = Math.floor((availableWidth - gap*(cols-1)) / cols);
   const sizeByH = Math.floor((availableHeight - gap*(rows-1)) / rows);
-  // Clamp to a sensible range so tiles don't dominate the screen
-  const size = Math.max(56, Math.min(120, sizeByW, sizeByH));
+
+  // Choose the limiting dimension first (keeps everything on-screen)
+  let base = Math.min(sizeByW, sizeByH);
+
+  // Cap large tiles to avoid dominating the page on huge displays
+  base = Math.min(base, 110);
+
+  // Never upscale above what actually fits (avoid overflow);
+  // if it's extremely small on tiny screens, we accept it to preserve fit.
+  const size = Math.max(8, base);
+
   document.documentElement.style.setProperty('--tile-size', size + 'px');
 }
 
