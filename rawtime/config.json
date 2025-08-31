@@ -1,5 +1,6 @@
 {
   "connectionUrl": "audio/CONNECTION.mp3",
+  "randoms": ["audio/random1.mp3","audio/random2.mp3","audio/random3.mp3","audio/random4.mp3"],
   "clips": [
     {
       "name": "beckys back.mp3",

@@ -1,271 +1,249 @@
-/* RAW TIME — Soundboard logic
-   - Loads config.json { connectionUrl, clips: [{ url, sizeKB }] }
-   - Sorts clips by sizeKB ascending
-   - Renders 75 tiles (or however many provided)
-   - Clicking a tile queues: Connection → Clip → Connection
-   - Button behavior: shows NOW PLAYING while active; then stays depressed + blank text
-   - If a clip errors, shows error badge and allows retry (re-enables tile)
-   - No persistence across reloads
+/* Streamdeck-styled RawTime soundboard
+   - Square tiles, 5 columns (15 rows).
+   - Connection 'sting' button always enabled.
+   - No numeric labels on tiles.
+   - Random pre/post stingers around the main sequence.
+   - 1.5s pause between connection intro and the main clip.
+   - No crossOrigin on audio; supports same-host /audio/*.mp3 or Drive download URLs.
 */
-
-const GRID_COLS = 15; // visual reference, layout handled in CSS
 
 const els = {
   grid: document.getElementById('grid'),
   notice: document.getElementById('notice'),
   metaCount: document.getElementById('meta-count'),
   metaQueue: document.getElementById('meta-queue'),
+  btnConnection: document.getElementById('btn-connection'),
 };
 
-// Attempt to fetch local config.json (or fall back to sample)
 async function loadConfig() {
-  // 0) Site-wide production config (set via window.SOUNDBOARD_CONFIG_URL)
+  // Prefer explicit production URL if provided
   if (window.SOUNDBOARD_CONFIG_URL) {
-    try {
-      const res = await fetch(window.SOUNDBOARD_CONFIG_URL, { cache: 'no-store' });
-      if (res.ok) {
-        const json = await res.json();
-        if (json && json.clips && json.connectionUrl) return json;
-      }
-    } catch (e) { console.warn('Prod config fetch failed', e); }
+    const res = await fetch(window.SOUNDBOARD_CONFIG_URL, { cache: 'no-store' });
+    if (!res.ok) throw new Error('Failed to fetch production config');
+    return res.json();
   }
-
-  // 1) URL param override (?config=...)
-  const params = new URLSearchParams(location.search);
-  const override = params.get('config');
-  if (override) {
+  // Fallbacks
+  for (const p of ['config.json', 'config.sample.json']) {
     try {
-      const res = await fetch(override, { cache: 'no-store' });
-      if (res.ok) {
-        const json = await res.json();
-        if (json && json.clips && json.connectionUrl) return json;
-      }
-    } catch (e) { console.warn('Failed to load ?config', override, e); }
+      const res = await fetch(p, { cache: 'no-store' });
+      if (res.ok) return await res.json();
+    } catch {}
   }
-
-  // 2/3) local files or inline fallback (unchanged)...
-  // ... keep your existing tries for 'config.json', 'config.sample.json', then #CONFIG script tag
+  throw new Error('Missing config');
 }
 
-// Helpers
+// Drive helpers (safe if you still point to Drive)
 function getDriveId(url) {
-  // Support: https://drive.google.com/file/d/{id}/view?... or .../uc?export=download&id={id} or open?id=...
   try {
     const u = new URL(url);
     if (u.hostname.includes('drive.google.com')) {
-      const match = u.pathname.match(/\/file\/d\/([^/]+)/);
-      if (match) return match[1];
+      const m = u.pathname.match(/\/file\/d\/([^/]+)/);
+      if (m) return m[1];
       if (u.searchParams.has('id')) return u.searchParams.get('id');
     }
-  } catch (e) {}
+  } catch {}
   return null;
 }
 function toDirectDriveUrl(url) {
   const id = getDriveId(url);
-  if (id) return `https://drive.google.com/uc?export=download&id=${id}`;
-  return url; // return as-is if not recognized; may already be direct
-}
-function formatCount(n) {
-  return `${n} clip${n === 1 ? '' : 's'}`;
+  return id ? `https://drive.google.com/uc?export=download&id=${id}` : url;
 }
 
-// Playback engine
+function formatCount(n){ return `${n} clip${n===1?'':'s'}`; }
+
 class Engine {
-  constructor(connectionUrl) {
+  constructor(connectionUrl, randoms) {
     this.queue = [];
     this.isBusy = false;
-    this.connectionUrl = toDirectDriveUrl(connectionUrl);
+    this.connectionUrl = connectionUrl;
+    this.randoms = randoms || [];
+    // Preload only the connection
     this.connection = new Audio(this.connectionUrl);
     this.connection.preload = 'auto';
   }
-  enqueue(item) {
-    this.queue.push(item);
-    this.updateQueueMeta();
-    this.kick();
+  enqueueClip(item) {
+    this.queue.push({ kind:'clip', item });
+    this.updateQueueMeta(); this.kick();
+  }
+  enqueueConnection() {
+    this.queue.push({ kind:'sting' });
+    this.updateQueueMeta(); this.kick();
   }
   updateQueueMeta() {
-    els.metaQueue.textContent = `Queue: ${this.queue.length}${this.isBusy ? ' (playing)' : ''}`;
+    els.metaQueue.textContent = `Queue: ${this.queue.length}${this.isBusy?' (playing)':''}`;
   }
   async kick() {
     if (this.isBusy) return;
     if (this.queue.length === 0) { this.updateQueueMeta(); return; }
-    this.isBusy = true;
-    this.updateQueueMeta();
-    const next = this.queue.shift();
+    this.isBusy = true; this.updateQueueMeta();
+    const task = this.queue.shift();
     try {
-      await this.playSequence(next);
-      // mark as played
-      next.state = 'played';
-      markPlayed(next);
+      if (task.kind === 'sting') {
+        await this.safePlay(this.connectionUrl);
+      } else if (task.kind === 'clip') {
+        await this.playSequence(task.item);
+      }
+      if (task.kind === 'clip') {
+        task.item.state = 'played'; markPlayed(task.item);
+      }
     } catch (err) {
       console.error('Sequence failed', err);
-      next.state = 'error';
-      markError(next, err);
+      if (task.kind === 'clip') {
+        task.item.state = 'error'; markError(task.item, err);
+      }
     } finally {
-      this.isBusy = false;
-      this.updateQueueMeta();
-      // proceed to next
-      this.kick();
+      this.isBusy = false; this.updateQueueMeta(); this.kick();
     }
   }
+
   async playSequence(item) {
-    // Set NOW PLAYING
     markNowPlaying(item);
-    // play connection intro (non-blocking if it errors)
+    // Randoms before the main audio: 10% then 5%
+    await this.maybeRandom(0.10);
+    await this.maybeRandom(0.05);
+
+    // Connection intro
     await this.safePlay(this.connectionUrl);
-    // play clip (must succeed, or throw)
-    await this.mustPlay(toDirectDriveUrl(item.url));
-    // play connection outro (non-blocking if it errors)
+
+    // 1.5s pause before the main audio
+    await this.wait(1500);
+
+    // Main audio (must succeed, bubbles errors)
+    await this.mustPlay(item.url);
+
+    // Connection outro (no pause afterwards)
     await this.safePlay(this.connectionUrl);
+
+    // Random after main: 5%
+    await this.maybeRandom(0.05);
   }
-  // Attempt to play; on error, just continue
-  async safePlay(src) {
-    try { await this.playOnce(src); } catch (e) { console.warn('safePlay error', e); }
+
+  pickRandomUrl() {
+    if (!this.randoms || this.randoms.length === 0) return null;
+    const idx = Math.floor(Math.random() * this.randoms.length);
+    return this.randoms[idx];
   }
-  // Must play; on error, throw to mark item error
-  async mustPlay(src) {
-    await this.playOnce(src);
+  async maybeRandom(prob) {
+    if (Math.random() < prob) {
+      const r = this.pickRandomUrl();
+      if (r) await this.safePlay(r);
+    }
   }
-  playOnce(src) {
-    return new Promise((resolve, reject) => {
+
+  wait(ms){ return new Promise(res=>setTimeout(res, ms)); }
+
+  async safePlay(src){
+    try { await this.playOnce(src); } catch(e){ console.warn('safePlay error', e); }
+  }
+  async mustPlay(src){ await this.playOnce(src); }
+
+  playOnce(src){
+    return new Promise((resolve, reject)=>{
       const a = new Audio();
       a.preload = 'auto';
       a.src = src;
-      a.referrerPolicy = 'no-referrer'; 
-      let settled = false;
+      a.referrerPolicy = 'no-referrer';
 
-      const onEnded = () => { cleanup(); resolve(); };
-      const onError = (e) => { cleanup(); reject(new Error('Audio error')); };
-
-      function cleanup() {
-        if (settled) return;
-        settled = true;
+      const onEnded = ()=>{ cleanup(); resolve(); };
+      const onError = ()=>{ cleanup(); reject(new Error('Audio error')); };
+      const cleanup = ()=>{
         a.removeEventListener('ended', onEnded);
         a.removeEventListener('error', onError);
-      }
+      };
 
       a.addEventListener('ended', onEnded);
       a.addEventListener('error', onError);
-      // iOS requires user gesture; our click triggers the first audio; subsequent should be fine
-      const playPromise = a.play();
-      if (playPromise && typeof playPromise.then === 'function') {
-        playPromise.then(() => {
-          // ok
-        }).catch((err) => {
-          cleanup();
-          reject(err || new Error('Playback failed (promise rejection)'));
-        });
+      const p = a.play();
+      if (p && typeof p.then === 'function') {
+        p.catch(err=>{ cleanup(); reject(err||new Error('Playback failed')); });
       }
     });
   }
 }
 
 let engine = null;
-let items = []; // { idx, url, sizeKB, el, state }
+let items = [];
+let randoms = [];
 
 function renderGrid() {
   els.grid.innerHTML = '';
-  items.forEach((it, i) => {
+  items.forEach((it) => {
     const btn = document.createElement('button');
     btn.className = 'tile';
     btn.type = 'button';
-    btn.dataset.index = String(i);
-    btn.disabled = false;
-
-    const num = document.createElement('span');
-    num.className = 'num';
-    num.textContent = String(i + 1);
-
     const label = document.createElement('span');
     label.className = 'label';
     label.textContent = '';
-
-    btn.appendChild(num);
     btn.appendChild(label);
-
     btn.addEventListener('click', () => onTileClick(it));
-
-    it.el = btn;
-    it.labelEl = label;
+    it.el = btn; it.labelEl = label;
     els.grid.appendChild(btn);
   });
 }
 
-function onTileClick(it) {
-  if (it.state === 'played') return; // do not replay
-  if (it.state === 'queued') return; // already queued
-  if (it.state === 'now') return;    // already playing
-
-  // queue it
+function onTileClick(it){
+  if (it.state === 'played' || it.state === 'queued' || it.state === 'now') return;
   it.state = engine && engine.isBusy ? 'queued' : 'now';
   updateTileVisual(it);
-  engine.enqueue(it);
+  engine.enqueueClip(it);
 }
 
-function updateTileVisual(it) {
+function updateTileVisual(it){
   const el = it.el;
-  el.classList.remove('played', 'queued', 'now', 'error');
-  if (it.state === 'played') {
-    el.classList.add('played');
-    it.labelEl.textContent = '';
-    el.disabled = true;
-  } else if (it.state === 'queued') {
-    el.classList.add('queued');
-    it.labelEl.textContent = 'QUEUED';
-    el.disabled = true; // prevent duplicate queues
-  } else if (it.state === 'now') {
-    el.classList.add('now');
-    it.labelEl.textContent = 'NOW PLAYING';
-    el.disabled = true;
-  } else if (it.state === 'error') {
-    el.classList.add('error');
-    it.labelEl.textContent = 'ERROR — CLICK TO RETRY';
-    el.disabled = false; // allow retry
-  } else {
-    el.disabled = false;
-    it.labelEl.textContent = '';
+  el.classList.remove('played','queued','now','error');
+  if (it.state === 'played') { el.classList.add('played'); it.labelEl.textContent=''; el.disabled = true; }
+  else if (it.state === 'queued') { el.classList.add('queued'); it.labelEl.textContent='QUEUED'; el.disabled = true; }
+  else if (it.state === 'now') { el.classList.add('now'); it.labelEl.textContent='NOW PLAYING'; el.disabled = true; }
+  else if (it.state === 'error') { el.classList.add('error'); it.labelEl.textContent='ERROR — CLICK TO RETRY'; el.disabled = false; }
+  else { el.disabled = false; it.labelEl.textContent=''; }
+}
+function markNowPlaying(it){ it.state='now'; updateTileVisual(it); }
+function markPlayed(it){ it.state='played'; updateTileVisual(it); }
+function markError(it){ it.state='error'; updateTileVisual(it); }
+
+function buildRandoms(cfg){
+  if (Array.isArray(cfg.randoms) && cfg.randoms.length){
+    return cfg.randoms;
   }
+  // Fallback to /audio/random1..4.mp3 (same-origin)
+  const base = (cfg.connectionUrl || '').split('/').slice(0, -1).join('/'); // infer /audio directory
+  const dir = base || 'audio';
+  return [1,2,3,4].map(i => `${dir}/random${i}.mp3`);
 }
 
-function markNowPlaying(it) {
-  it.state = 'now';
-  updateTileVisual(it);
-}
-function markPlayed(it) {
-  it.state = 'played';
-  updateTileVisual(it);
-}
-function markError(it, err) {
-  console.error('Error on item', it, err);
-  it.state = 'error';
-  updateTileVisual(it);
-}
-
-// Boot
-(async function init() {
+(async function init(){
   try {
     const cfg = await loadConfig();
-    engine = new Engine(cfg.connectionUrl);
 
-    items = (cfg.clips || [])
-      .map((c, idx) => ({ idx, url: c.url, sizeKB: Number(c.sizeKB) || 0, state: 'ready', el: null, labelEl: null }))
-      .sort((a, b) => (a.sizeKB - b.sizeKB)); // shortest (smallest size) first
+    // Build clip list and sort by sizeKB (asc)
+    items = (cfg.clips||[]).map((c, idx)=> ({
+      idx,
+      url: (c.url || c.href || ''),
+      sizeKB: Number(c.sizeKB) || 0,
+      state:'ready', el:null, labelEl:null
+    })).sort((a,b)=>a.sizeKB - b.sizeKB);
+
+    // Normalize any Drive links if present
+    items.forEach(it => { it.url = toDirectDriveUrl(it.url); });
+
+    randoms = buildRandoms(cfg).map(toDirectDriveUrl);
+    const connectionUrl = toDirectDriveUrl(cfg.connectionUrl);
+
+    engine = new Engine(connectionUrl, randoms);
 
     els.metaCount.textContent = formatCount(items.length);
-
     renderGrid();
 
-    // If not exactly 75, show a soft notice (still works with any count)
+    // Connection button always works
+    els.btnConnection.addEventListener('click', ()=> engine.enqueueConnection());
+
     if (items.length !== 75) {
-      showNotice(`Heads up: config contains ${items.length} clip(s). This board is designed for 75.`);
+      showNotice(`Heads up: ${items.length} clip(s) loaded; board is designed for 75.`);
     }
   } catch (e) {
     console.error(e);
-    showNotice('Could not load config.json. Place a config.json next to index.html. Using config.sample.json as a template.');
+    showNotice('Could not load config. Ensure config.json is served and valid.');
   }
 })();
 
-function showNotice(msg) {
-  els.notice.textContent = msg;
-  els.notice.hidden = false;
-}
+function showNotice(msg){ els.notice.textContent = msg; els.notice.hidden = false; }
