@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RAW TIME — Soundboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="top">
+    <h1>RAW TIME — Soundboard</h1>
+    <div class="meta">
+      <span id="meta-count">0 clips</span>
+      <span id="meta-queue">Queue: 0</span>
+    </div>
+  </header>
+
+  <main>
+    <div id="notice" class="notice" hidden></div>
+    <div id="grid" class="grid" aria-live="polite" aria-label="Soundboard grid of buttons"></div>
+  </main>
+
+  <footer class="footer">
+    <small>Tip: Click buttons to queue. Each clip plays with “Connection” before and after. Refresh to reset.</small>
+  </footer>
+  <script>
+    // put your absolute URL here (GitHub Pages, Netlify, etc.)
+    window.SOUNDBOARD_CONFIG_URL = "https://gafgarian.github.io/lolcownerd/rawtime/config.json";
+  </script>
+  <script src="app.js"></script>
+</body>
+</html>
