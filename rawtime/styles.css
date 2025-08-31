@@ -73,7 +73,7 @@ body{
 
 .grid{
   display:grid;
-  grid-template-columns: repeat(5, var(--tile-size)); /* fixed columns */
+  grid-template-columns: repeat(15, var(--tile-size)); /* fixed columns */
   grid-auto-rows: var(--tile-size);
   justify-content:center;
   gap:12px;
