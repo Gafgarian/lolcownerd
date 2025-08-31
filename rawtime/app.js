@@ -225,8 +225,8 @@ function updateTileVisual(it){
   const el = it.el;
   el.classList.remove('played','queued','now','error');
   if (it.state === 'played') { el.classList.add('played'); it.labelEl.textContent=''; el.disabled = true; }
-  else if (it.state === 'queued') { el.classList.add('queued'); it.labelEl.textContent='QUEUED'; el.disabled = true; }
-  else if (it.state === 'now') { el.classList.add('now'); it.labelEl.textContent='NOW PLAYING'; el.disabled = true; }
+  else if (it.state === 'queued') { el.classList.add('queued'); it.labelEl.textContent='QUEUED'; el.disabled = false; }
+  else if (it.state === 'now') { el.classList.add('now'); it.labelEl.textContent='NOW PLAYING'; el.disabled = false }
   else if (it.state === 'error') { el.classList.add('error'); it.labelEl.textContent='ERROR — CLICK TO RETRY'; el.disabled = false; }
   else { el.disabled = false; it.labelEl.textContent=''; }
 }
