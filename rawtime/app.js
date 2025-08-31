@@ -109,7 +109,7 @@ class Engine {
     await this.maybeRandom(0.10); // 10% before
     await this.maybeRandom(0.05); // then 5% before
     await this.safePlay(this.connectionUrl); // intro
-    await this.wait(1500); // 1.5s pause
+    await this.wait(1000); // 1.0s pause
     await this.mustPlay(item.url); // main
     await this.safePlay(this.connectionUrl); // outro (no pause after)
     await this.maybeRandom(0.05); // 5% after
@@ -161,6 +161,31 @@ class Engine {
 let engine = null;
 let items = [];
 let randoms = [];
+
+
+function computeTileSize(){
+  // Aim to fit 5 columns x 15 rows without (or with minimal) scroll
+  const cols = 5, rows = 15, gap = 12;
+  const grid = els.grid;
+  const footer = document.querySelector('.footer');
+  // Account for page paddings around grid (20px left/right, ~28px bottom)
+  const availableWidth = Math.max(0, window.innerWidth - 40);
+  const gridTop = grid.getBoundingClientRect().top;
+  const footerTop = footer ? footer.getBoundingClientRect().top : window.innerHeight;
+  const availableHeight = Math.max(0, footerTop - gridTop - 28);
+  const sizeByW = Math.floor((availableWidth - gap*(cols-1)) / cols);
+  const sizeByH = Math.floor((availableHeight - gap*(rows-1)) / rows);
+  // Clamp to a sensible range so tiles don't dominate the screen
+  const size = Math.max(56, Math.min(120, sizeByW, sizeByH));
+  document.documentElement.style.setProperty('--tile-size', size + 'px');
+}
+
+function initResponsiveSizing(){
+  // Run once grid exists
+  computeTileSize();
+  window.addEventListener('resize', computeTileSize, { passive:true });
+  window.addEventListener('orientationchange', computeTileSize);
+}
 
 function renderGrid() {
   els.grid.innerHTML = '';
@@ -241,6 +266,7 @@ function getAudioDirFrom(url){
 
     els.metaCount.textContent = formatCount(items.length);
     renderGrid();
+    initResponsiveSizing();
 
     // Connection button always works
     els.btnConnection.addEventListener('click', ()=> engine.enqueueConnection());
