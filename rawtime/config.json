@@ -1,381 +1,42 @@
 {
   "connectionUrl": "audio/CONNECTION.mp3",
-  "randoms": ["audio/random1.mp3","audio/random2.mp3","audio/random3.mp3","audio/random4.mp3"],
+  "randoms": [
+    "audio/random1.mp3",
+    "audio/random2.mp3",
+    "audio/random3.mp3"
+  ],
   "clips": [
-    {
-      "name": "beckys back.mp3",
-      "url": "audio/beckys%20back.mp3",
-      "sizeKB": 203
-    },
-    {
-      "name": "flat breasts.mp3",
-      "url": "audio/flat%20breasts.mp3",
-      "sizeKB": 182
-    },
-    {
-      "name": "mysoginstic tendencies.mp3",
-      "url": "audio/mysoginstic%20tendencies.mp3",
-      "sizeKB": 143
-    },
-    {
-      "name": "mexican people.mp3",
-      "url": "audio/mexican%20people.mp3",
-      "sizeKB": 52
-    },
-    {
-      "name": "dr jordan anix.mp3",
-      "url": "audio/dr%20jordan%20anix.mp3",
-      "sizeKB": 150
-    },
-    {
-      "name": "midget porn.mp3",
-      "url": "audio/midget%20porn.mp3",
-      "sizeKB": 23
-    },
-    {
-      "name": "steven give me your nintendo.mp3",
-      "url": "audio/steven%20give%20me%20your%20nintendo.mp3",
-      "sizeKB": 119
-    },
-    {
-      "name": "why do you subject yourself to this.mp3",
-      "url": "audio/why%20do%20you%20subject%20yourself%20to%20this.mp3",
-      "sizeKB": 150
-    },
-    {
-      "name": "do you believe in god.mp3",
-      "url": "audio/do%20you%20believe%20in%20god.mp3",
-      "sizeKB": 98
-    },
-    {
-      "name": "blue pussy.mp3",
-      "url": "audio/blue%20pussy.mp3",
-      "sizeKB": 42
-    },
-    {
-      "name": "dye my hair blue and youre single.mp3",
-      "url": "audio/dye%20my%20hair%20blue%20and%20youre%20single.mp3",
-      "sizeKB": 273
-    },
-    {
-      "name": "take off your shirt.mp3",
-      "url": "audio/take%20off%20your%20shirt.mp3",
-      "sizeKB": 22
-    },
-    {
-      "name": "spare time.mp3",
-      "url": "audio/spare%20time.mp3",
-      "sizeKB": 119
-    },
-    {
-      "name": "blue hair.mp3",
-      "url": "audio/blue%20hair.mp3",
-      "sizeKB": 33
-    },
-    {
-      "name": "see fight club.mp3",
-      "url": "audio/see%20fight%20club.mp3",
-      "sizeKB": 66
-    },
-    {
-      "name": "might be in love.mp3",
-      "url": "audio/might%20be%20in%20love.mp3",
-      "sizeKB": 75
-    },
-    {
-      "name": "good looking.mp3",
-      "url": "audio/good%20looking.mp3",
-      "sizeKB": 53
-    },
-    {
-      "name": "go have sex with jesus.mp3",
-      "url": "audio/go%20have%20sex%20with%20jesus.mp3",
-      "sizeKB": 35
-    },
-    {
-      "name": "blonde or brunette.mp3",
-      "url": "audio/blonde%20or%20brunette.mp3",
-      "sizeKB": 59
-    },
-    {
-      "name": "shit in your mouth.mp3",
-      "url": "audio/shit%20in%20your%20mouth.mp3",
-      "sizeKB": 131
-    },
-    {
-      "name": "witty girl.mp3",
-      "url": "audio/witty%20girl.mp3",
-      "sizeKB": 89
-    },
-    {
-      "name": "these callers are dumb.mp3",
-      "url": "audio/these%20callers%20are%20dumb.mp3",
-      "sizeKB": 198
-    },
-    {
-      "name": "this show is fucking bitch.mp3",
-      "url": "audio/this%20show%20is%20fucking%20bitch.mp3",
-      "sizeKB": 76
-    },
-    {
-      "name": "When are you gonna come over here and fix my sink, bitch?.mp3",
-      "url": "audio/When%20are%20you%20gonna%20come%20over%20here%20and%20fix%20my%20sink%2C%20bitch%3F.mp3",
-      "sizeKB": 102
-    },
-    {
-      "name": "i love you.mp3",
-      "url": "audio/i%20love%20you.mp3",
-      "sizeKB": 10
-    },
-    {
-      "name": "ding dong.mp3",
-      "url": "audio/ding%20dong.mp3",
-      "sizeKB": 14
-    },
-    {
-      "name": "bitch get off the air.mp3",
-      "url": "audio/bitch%20get%20off%20the%20air.mp3",
-      "sizeKB": 14
-    },
-    {
-      "name": "sorority girl.mp3",
-      "url": "audio/sorority%20girl.mp3",
-      "sizeKB": 18
-    },
-    {
-      "name": "hey mate.mp3",
-      "url": "audio/hey%20mate.mp3",
-      "sizeKB": 18
-    },
-    {
-      "name": "like it in the ass.mp3",
-      "url": "audio/like%20it%20in%20the%20ass.mp3",
-      "sizeKB": 20
-    },
-    {
-      "name": "what's this show about.mp3",
-      "url": "audio/what%27s%20this%20show%20about.mp3",
-      "sizeKB": 24
-    },
-    {
-      "name": "bitch I think your show sucks.mp3",
-      "url": "audio/bitch%20I%20think%20your%20show%20sucks.mp3",
-      "sizeKB": 24
-    },
-    {
-      "name": "very beautiful.mp3",
-      "url": "audio/very%20beautiful.mp3",
-      "sizeKB": 24
-    },
-    {
-      "name": "hot topic.mp3",
-      "url": "audio/hot%20topic.mp3",
-      "sizeKB": 25
-    },
-    {
-      "name": "you hung up on me last time.mp3",
-      "url": "audio/you%20hung%20up%20on%20me%20last%20time.mp3",
-      "sizeKB": 29
-    },
-    {
-      "name": "say what.mp3",
-      "url": "audio/say%20what.mp3",
-      "sizeKB": 33
-    },
-    {
-      "name": "very pale.mp3",
-      "url": "audio/very%20pale.mp3",
-      "sizeKB": 38
-    },
-    {
-      "name": "you taking your clothes off.mp3",
-      "url": "audio/you%20taking%20your%20clothes%20off.mp3",
-      "sizeKB": 40
-    },
-    {
-      "name": "ignorant son of a bitch.mp3",
-      "url": "audio/ignorant%20son%20of%20a%20bitch.mp3",
-      "sizeKB": 43
-    },
-    {
-      "name": "i like rap videos.mp3",
-      "url": "audio/i%20like%20rap%20videos.mp3",
-      "sizeKB": 45
-    },
-    {
-      "name": "first time hung up.mp3",
-      "url": "audio/first%20time%20hung%20up.mp3",
-      "sizeKB": 62
-    },
-    {
-      "name": "suck my dick.mp3",
-      "url": "audio/suck%20my%20dick.mp3",
-      "sizeKB": 62
-    },
-    {
-      "name": "eats his own dad's dick.mp3",
-      "url": "audio/eats%20his%20own%20dad%27s%20dick.mp3",
-      "sizeKB": 63
-    },
-    {
-      "name": "faith no more part 2.mp3",
-      "url": "audio/faith%20no%20more%20part%202.mp3",
-      "sizeKB": 75
-    },
-    {
-      "name": "i like the show.mp3",
-      "url": "audio/i%20like%20the%20show.mp3",
-      "sizeKB": 93
-    },
-    {
-      "name": "i can suck my own dick.mp3",
-      "url": "audio/i%20can%20suck%20my%20own%20dick.mp3",
-      "sizeKB": 93
-    },
-    {
-      "name": "what are you going to do for us.mp3",
-      "url": "audio/what%20are%20you%20going%20to%20do%20for%20us.mp3",
-      "sizeKB": 101
-    },
-    {
-      "name": "how to get a public access show.mp3",
-      "url": "audio/how%20to%20get%20a%20public%20access%20show.mp3",
-      "sizeKB": 104
-    },
-    {
-      "name": "how old are you again.mp3",
-      "url": "audio/how%20old%20are%20you%20again.mp3",
-      "sizeKB": 124
-    },
-    {
-      "name": "these people aren't cool.mp3",
-      "url": "audio/these%20people%20aren%27t%20cool.mp3",
-      "sizeKB": 162
-    },
-    {
-      "name": "doing a great job longer.mp3",
-      "url": "audio/doing%20a%20great%20job%20longer.mp3",
-      "sizeKB": 203
-    },
-    {
-      "name": "ever had a serious call.mp3",
-      "url": "audio/ever%20had%20a%20serious%20call.mp3",
-      "sizeKB": 77
-    },
-    {
-      "name": "why do you try to be like marilyn manson.mp3",
-      "url": "audio/why%20do%20you%20try%20to%20be%20like%20marilyn%20manson.mp3",
-      "sizeKB": 34
-    },
-    {
-      "name": "come over and listen to faith no more.mp3",
-      "url": "audio/come%20over%20and%20listen%20to%20faith%20no%20more.mp3",
-      "sizeKB": 216
-    },
-    {
-      "name": "start a band part 2.mp3",
-      "url": "audio/start%20a%20band%20part%202.mp3",
-      "sizeKB": 120
-    },
-    {
-      "name": "true savings plan.mp3",
-      "url": "audio/true%20savings%20plan.mp3",
-      "sizeKB": 118
-    },
-    {
-      "name": "you look very good tonight.mp3",
-      "url": "audio/you%20look%20very%20good%20tonight.mp3",
-      "sizeKB": 32
-    },
-    {
-      "name": "donkey punch.mp3",
-      "url": "audio/donkey%20punch.mp3",
-      "sizeKB": 37
-    },
-    {
-      "name": "spit or swallow.mp3",
-      "url": "audio/spit%20or%20swallow.mp3",
-      "sizeKB": 22
-    },
-    {
-      "name": "jesus loves you.mp3",
-      "url": "audio/jesus%20loves%20you.mp3",
-      "sizeKB": 20
-    },
-    {
-      "name": "vagina skin.mp3",
-      "url": "audio/vagina%20skin.mp3",
-      "sizeKB": 47
-    },
-    {
-      "name": "dancing with ballerinas.mp3",
-      "url": "audio/dancing%20with%20ballerinas.mp3",
-      "sizeKB": 90
-    },
-    {
-      "name": "fix the static.mp3",
-      "url": "audio/fix%20the%20static.mp3",
-      "sizeKB": 48
-    },
-    {
-      "name": "fine how about you.mp3",
-      "url": "audio/fine%20how%20about%20you.mp3",
-      "sizeKB": 27
-    },
-    {
-      "name": "black guys rule.mp3",
-      "url": "audio/black%20guys%20rule.mp3",
-      "sizeKB": 77
-    },
-    {
-      "name": "don't like limp bizkit.mp3",
-      "url": "audio/don%27t%20like%20limp%20bizkit.mp3",
-      "sizeKB": 25
-    },
-    {
-      "name": "jerking off into a garbage bag.mp3",
-      "url": "audio/jerking%20off%20into%20a%20garbage%20bag.mp3",
-      "sizeKB": 52
-    },
-    {
-      "name": "small tits.mp3",
-      "url": "audio/small%20tits.mp3",
-      "sizeKB": 37
-    },
-    {
-      "name": "how old are you.mp3",
-      "url": "audio/how%20old%20are%20you.mp3",
-      "sizeKB": 27
-    },
-    {
-      "name": "start a band.mp3",
-      "url": "audio/start%20a%20band.mp3",
-      "sizeKB": 25
-    },
-    {
-      "name": "Are you christian.mp3",
-      "url": "audio/Are%20you%20christian.mp3",
-      "sizeKB": 28
-    },
-    {
-      "name": "Pizza.mp3",
-      "url": "audio/Pizza.mp3",
-      "sizeKB": 25
-    },
-    {
-      "name": "Play it for me baby.mp3",
-      "url": "audio/Play%20it%20for%20me%20baby.mp3",
-      "sizeKB": 156
-    },
-    {
-      "name": "Danzig Rules.mp3",
-      "url": "audio/Danzig%20Rules.mp3",
-      "sizeKB": 55
-    },
-    {
-      "name": "Call Rush.mp3",
-      "url": "audio/Call%20Rush.mp3",
-      "sizeKB": 40
-    }
+    { "name": "suck my dick.mp3", "url": "audio/suck%20my%20dick.mp3", "sizeKB": 62 },
+    { "name": "eats his own dad's dick.mp3", "url": "audio/eats%20his%20own%20dad%27s%20dick.mp3", "sizeKB": 63 },
+    { "name": "see fight club.mp3", "url": "audio/see%20fight%20club.mp3", "sizeKB": 66 },
+    { "name": "might be in love.mp3", "url": "audio/might%20be%20in%20love.mp3", "sizeKB": 75 },
+    { "name": "faith no more part 2.mp3", "url": "audio/faith%20no%20more%20part%202.mp3", "sizeKB": 75 },
+    { "name": "black guys rule.mp3", "url": "audio/black%20guys%20rule.mp3", "sizeKB": 77 },
+    { "name": "ever had a serious call.mp3", "url": "audio/ever%20had%20a%20serious%20call.mp3", "sizeKB": 77 },
+    { "name": "witty girl.mp3", "url": "audio/witty%20girl.mp3", "sizeKB": 89 },
+    { "name": "dancing with ballerinas.mp3", "url": "audio/dancing%20with%20ballerinas.mp3", "sizeKB": 90 },
+    { "name": "i can suck my own dick.mp3", "url": "audio/i%20can%20suck%20my%20own%20dick.mp3", "sizeKB": 93 },
+    { "name": "i like the show.mp3", "url": "audio/i%20like%20the%20show.mp3", "sizeKB": 93 },
+    { "name": "do you believe in god.mp3", "url": "audio/do%20you%20believe%20in%20god.mp3", "sizeKB": 98 },
+    { "name": "what are you going to do for us.mp3", "url": "audio/what%20are%20you%20going%20to%20do%20for%20us.mp3", "sizeKB": 101 },
+    { "name": "When are you gonna come over here and fix my sink, bitch?.mp3", "url": "audio/When%20are%20you%20gonna%20come%20over%20here%20and%20fix%20my%20sink%2C%20bitch%3F.mp3", "sizeKB": 102 },
+    { "name": "how to get a public access show.mp3", "url": "audio/how%20to%20get%20a%20public%20access%20show.mp3", "sizeKB": 104 },
+    { "name": "true savings plan.mp3", "url": "audio/true%20savings%20plan.mp3", "sizeKB": 118 },
+    { "name": "steven give me your nintendo.mp3", "url": "audio/steven%20give%20me%20your%20nintendo.mp3", "sizeKB": 119 },
+    { "name": "spare time.mp3", "url": "audio/spare%20time.mp3", "sizeKB": 119 },
+    { "name": "start a band part 2.mp3", "url": "audio/start%20a%20band%20part%202.mp3", "sizeKB": 120 },
+    { "name": "how old are you again.mp3", "url": "audio/how%20old%20are%20you%20again.mp3", "sizeKB": 124 },
+    { "name": "shit in your mouth.mp3", "url": "audio/shit%20in%20your%20mouth.mp3", "sizeKB": 131 },
+    { "name": "mysoginstic tendencies.mp3", "url": "audio/mysoginstic%20tendencies.mp3", "sizeKB": 143 },
+    { "name": "dr jordan anix.mp3", "url": "audio/dr%20jordan%20anix.mp3", "sizeKB": 150 },
+    { "name": "why do you subject yourself to this.mp3", "url": "audio/why%20do%20you%20subject%20yourself%20to%20this.mp3", "sizeKB": 150 },
+    { "name": "Play it for me baby.mp3", "url": "audio/Play%20it%20for%20me%20baby.mp3", "sizeKB": 156 },
+    { "name": "these people aren't cool.mp3", "url": "audio/these%20people%20aren%27t%20cool.mp3", "sizeKB": 162 },
+    { "name": "flat breasts.mp3", "url": "audio/flat%20breasts.mp3", "sizeKB": 182 },
+    { "name": "these callers are dumb.mp3", "url": "audio/these%20callers%20are%20dumb.mp3", "sizeKB": 198 },
+    { "name": "beckys back.mp3", "url": "audio/beckys%20back.mp3", "sizeKB": 203 },
+    { "name": "doing a great job longer.mp3", "url": "audio/doing%20a%20great%20job%20longer.mp3", "sizeKB": 203 },
+    { "name": "come over and listen to faith no more.mp3", "url": "audio/come%20over%20and%20listen%20to%20faith%20no%20more.mp3", "sizeKB": 216 },
+    { "name": "dye my hair blue and youre single.mp3", "url": "audio/dye%20my%20hair%20blue%20and%20youre%20single.mp3", "sizeKB": 273 }
   ]
 }

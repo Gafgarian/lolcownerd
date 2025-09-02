@@ -240,7 +240,7 @@ function buildRandoms(cfg, audioDir){
   }
   // Fallback to /audio/random1..4.mp3
   const dir = audioDir || 'audio';
-  return [1,2,3,4].map(i => `${dir}/random${i}.mp3`);
+  return [1,2,3].map(i => `${dir}/random${i}.mp3`);
 }
 
 function getAudioDirFrom(url){
