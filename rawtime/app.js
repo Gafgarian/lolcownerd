@@ -1,9 +1,9 @@
-/* Streamdeck-styled RawTime soundboard (defensive build)
-   - Square tiles, 5 columns (15 rows).
+/* Streamdeck-styled RawTime soundboard (dynamic columns)
+   - 10 tiles per row; as many rows as needed.
    - Connection 'sting' button always enabled.
    - No numeric labels on tiles.
    - Random pre/post stingers around the main sequence.
-   - 1.5s pause between connection intro and the main clip.
+   - 1.0s pause between connection intro and the main clip.
    - Defensive config loading + helpful errors.
 */
 
@@ -14,6 +14,9 @@ const els = {
   metaQueue: document.getElementById('meta-queue'),
   btnConnection: document.getElementById('btn-connection'),
 };
+
+const COLS = 10;          // <-- 10 per row
+const GAP_PX = 12;        // matches CSS grid-gap
 
 async function loadConfig() {
   const tryFetch = async (url) => {
@@ -29,8 +32,7 @@ async function loadConfig() {
   for (const p of ['config.json', 'config.sample.json']) {
     try {
       console.info('config: trying', p);
-      const cfg = await tryFetch(p);
-      return cfg;
+      return await tryFetch(p);
     } catch (e) {
       console.warn('config: miss', p, e);
     }
@@ -38,7 +40,7 @@ async function loadConfig() {
   throw new Error('No config.json found next to index.html (and no SOUNDBOARD_CONFIG_URL set).');
 }
 
-// Google Drive helpers (safe if you still point to Drive)
+// Google Drive helpers
 function getDriveId(url) {
   try {
     const u = new URL(url);
@@ -53,7 +55,6 @@ function getDriveId(url) {
 function toDirectDriveUrl(url) {
   if (!url) return url;
   const id = getDriveId(url);
-  // We prefer "uc?export=download" for <audio> elements.
   return id ? `https://drive.google.com/uc?export=download&id=${id}` : url;
 }
 
@@ -65,21 +66,13 @@ class Engine {
     this.isBusy = false;
     this.connectionUrl = connectionUrl;
     this.randoms = randoms || [];
-    // Preload only the connection
     this.connection = new Audio(this.connectionUrl);
     this.connection.preload = 'auto';
   }
-  enqueueClip(item) {
-    this.queue.push({ kind:'clip', item });
-    this.updateQueueMeta(); this.kick();
-  }
-  enqueueConnection() {
-    this.queue.push({ kind:'sting' });
-    this.updateQueueMeta(); this.kick();
-  }
-  updateQueueMeta() {
-    els.metaQueue.textContent = `Queue: ${this.queue.length}${this.isBusy?' (playing)':''}`;
-  }
+  enqueueClip(item) { this.queue.push({ kind:'clip', item }); this.updateQueueMeta(); this.kick(); }
+  enqueueConnection() { this.queue.push({ kind:'sting' }); this.updateQueueMeta(); this.kick(); }
+  updateQueueMeta() { els.metaQueue.textContent = `Queue: ${this.queue.length}${this.isBusy?' (playing)':''}`; }
+
   async kick() {
     if (this.isBusy) return;
     if (this.queue.length === 0) { this.updateQueueMeta(); return; }
@@ -91,14 +84,10 @@ class Engine {
       } else if (task.kind === 'clip') {
         await this.playSequence(task.item);
       }
-      if (task.kind === 'clip') {
-        task.item.state = 'played'; markPlayed(task.item);
-      }
+      if (task.kind === 'clip') { task.item.state = 'played'; markPlayed(task.item); }
     } catch (err) {
       console.error('Sequence failed', err);
-      if (task.kind === 'clip') {
-        task.item.state = 'error'; markError(task.item, err);
-      }
+      if (task.kind === 'clip') { task.item.state = 'error'; markError(task.item, err); }
     } finally {
       this.isBusy = false; this.updateQueueMeta(); this.kick();
     }
@@ -107,11 +96,11 @@ class Engine {
   async playSequence(item) {
     markNowPlaying(item);
     await this.maybeRandom(0.10); // 10% before
-    await this.maybeRandom(0.05); // then 5% before
+    await this.maybeRandom(0.05); // 5% before
     await this.safePlay(this.connectionUrl); // intro
-    await this.wait(1000); // 1.0s pause
+    await this.wait(1000); // <-- 1.0s pause (was 1.5s)
     await this.mustPlay(item.url); // main
-    await this.safePlay(this.connectionUrl); // outro (no pause after)
+    await this.safePlay(this.connectionUrl); // outro
     await this.maybeRandom(0.05); // 5% after
   }
 
@@ -128,10 +117,7 @@ class Engine {
   }
 
   wait(ms){ return new Promise(res=>setTimeout(res, ms)); }
-
-  async safePlay(src){
-    try { await this.playOnce(src); } catch(e){ console.warn('safePlay error', e); }
-  }
+  async safePlay(src){ try { await this.playOnce(src); } catch(e){ console.warn('safePlay error', e); } }
   async mustPlay(src){ await this.playOnce(src); }
 
   playOnce(src){
@@ -140,20 +126,16 @@ class Engine {
       a.preload = 'auto';
       a.src = src;
       a.referrerPolicy = 'no-referrer';
-
-      const onEnded = ()=>{ cleanup(); resolve(); };
-      const onError = ()=>{ cleanup(); reject(new Error('Audio error')); };
       const cleanup = ()=>{
         a.removeEventListener('ended', onEnded);
         a.removeEventListener('error', onError);
       };
-
+      const onEnded = ()=>{ cleanup(); resolve(); };
+      const onError = ()=>{ cleanup(); reject(new Error('Audio error')); };
       a.addEventListener('ended', onEnded);
       a.addEventListener('error', onError);
       const p = a.play();
-      if (p && typeof p.then === 'function') {
-        p.catch(err=>{ cleanup(); reject(err||new Error('Playback failed')); });
-      }
+      if (p && typeof p.then === 'function') p.catch(err=>{ cleanup(); reject(err||new Error('Playback failed')); });
     });
   }
 }
@@ -162,37 +144,21 @@ let engine = null;
 let items = [];
 let randoms = [];
 
+function setGridColumns(n){
+  els.grid.style.gridTemplateColumns = `repeat(${n}, var(--tile-size))`;
+}
 
 function computeTileSize(){
-  // Target layout: 5 rows x 15 columns (75 tiles)
-  const cols = 15, rows = 5, gap = 12;
-  const grid = els.grid;
-  const footer = document.querySelector('.footer');
-  // Available width (page padding ~20px left/right)
-  const availableWidth = Math.max(0, window.innerWidth - 40);
-  // Available height between grid top and footer
-  const gridTop = grid.getBoundingClientRect().top;
-  const footerTop = footer ? footer.getBoundingClientRect().top : window.innerHeight;
-  const availableHeight = Math.max(0, footerTop - gridTop - 28);
-
-  const sizeByW = Math.floor((availableWidth - gap*(cols-1)) / cols);
-  const sizeByH = Math.floor((availableHeight - gap*(rows-1)) / rows);
-
-  // Choose the limiting dimension first (keeps everything on-screen)
-  let base = Math.min(sizeByW, sizeByH);
-
-  // Cap large tiles to avoid dominating the page on huge displays
-  base = Math.min(base, 110);
-
-  // Never upscale above what actually fits (avoid overflow);
-  // if it's extremely small on tiny screens, we accept it to preserve fit.
-  const size = Math.max(8, base);
-
+  // Size by width only (unbounded rows)
+  const availableWidth = Math.max(0, window.innerWidth - 40); // page padding ~20px sides
+  const sizeByW = Math.floor((availableWidth - GAP_PX * (COLS - 1)) / COLS);
+  let base = Math.min(sizeByW, 110); // cap giant tiles a bit
+  const size = Math.max(10, base);   // never microscopic
   document.documentElement.style.setProperty('--tile-size', size + 'px');
+  setGridColumns(COLS);
 }
 
 function initResponsiveSizing(){
-  // Run once grid exists
   computeTileSize();
   window.addEventListener('resize', computeTileSize, { passive:true });
   window.addEventListener('orientationchange', computeTileSize);
@@ -226,7 +192,7 @@ function updateTileVisual(it){
   el.classList.remove('played','queued','now','error');
   if (it.state === 'played') { el.classList.add('played'); it.labelEl.textContent=''; el.disabled = true; }
   else if (it.state === 'queued') { el.classList.add('queued'); it.labelEl.textContent='QUEUED'; el.disabled = false; }
-  else if (it.state === 'now') { el.classList.add('now'); it.labelEl.textContent='NOW PLAYING'; el.disabled = false }
+  else if (it.state === 'now') { el.classList.add('now'); it.labelEl.textContent='NOW PLAYING'; el.disabled = false; }
   else if (it.state === 'error') { el.classList.add('error'); it.labelEl.textContent='ERROR — CLICK TO RETRY'; el.disabled = false; }
   else { el.disabled = false; it.labelEl.textContent=''; }
 }
@@ -238,7 +204,6 @@ function buildRandoms(cfg, audioDir){
   if (Array.isArray(cfg.randoms) && cfg.randoms.length){
     return cfg.randoms;
   }
-  // Fallback to /audio/random1..4.mp3
   const dir = audioDir || 'audio';
   return [1,2,3].map(i => `${dir}/random${i}.mp3`);
 }
@@ -257,12 +222,10 @@ function getAudioDirFrom(url){
     const cfg = await loadConfig();
     if (!cfg || typeof cfg !== 'object') throw new Error('Config is empty or invalid JSON.');
 
-    // Resolve connection URL from several possible keys
     const rawConn = cfg.connectionUrl || cfg.connectionURL || cfg.connection || (cfg.connection && cfg.connection.url);
     if (!rawConn) throw new Error('`connectionUrl` missing in config.json (expected a URL to your CONNECTION.mp3).');
     const connectionUrl = toDirectDriveUrl(rawConn);
 
-    // Build clip list and sort by sizeKB (asc)
     items = (cfg.clips||[]).map((c, idx)=> ({
       idx,
       url: toDirectDriveUrl(c.url || c.href || ''),
@@ -279,12 +242,10 @@ function getAudioDirFrom(url){
     renderGrid();
     initResponsiveSizing();
 
-    // Connection button always works
+    // Connection button always enabled/queues
     els.btnConnection.addEventListener('click', ()=> engine.enqueueConnection());
 
-    if (items.length !== 75) {
-      showNotice(`Heads up: ${items.length} clip(s) loaded; board is designed for 75.`);
-    }
+    // No “designed for 75” warning anymore
   } catch (e) {
     console.error(e);
     showNotice(e.message || 'Could not load config. Ensure config.json is served and valid.');
