@@ -98,7 +98,7 @@ class Engine {
     await this.maybeRandom(0.10); // 10% before
     await this.maybeRandom(0.05); // 5% before
     await this.safePlay(this.connectionUrl); // intro
-    await this.wait(1000); // <-- 1.0s pause (was 1.5s)
+    await this.wait(500); // <-- 0.5s pause (was 1.5s)
     await this.mustPlay(item.url); // main
     await this.safePlay(this.connectionUrl); // outro
     await this.maybeRandom(0.05); // 5% after
