@@ -2,13 +2,15 @@
   "name": "lcu-grand-prix",
   "version": "1.0.0",
   "type": "module",
-  "private": true,
   "scripts": {
-    "start": "node apps/server/index.mjs",
-    "dev": "NODE_ENV=development node apps/server/index.mjs"
+    "start": "node apps/server/index.mjs"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "express": "^4.19.2",
+    "node-fetch": "^2.7.0",
     "ws": "^8.17.0"
   }
 }
