@@ -1,27 +1,17 @@
-# syntax=docker/dockerfile:1.7
-FROM node:20-alpine AS base
+# syntax=docker/dockerfile:1.6
+
+FROM node:20-alpine AS deps
 WORKDIR /app
+# Yarn Classic
+RUN corepack disable && npm i -g yarn@1.22.22
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
 
-# Use Yarn Classic + keep cache OUTSIDE node_modules to avoid EBUSY
-ENV NODE_ENV=production \
-    YARN_CACHE_FOLDER=/root/.yarn
-
-# Enable Yarn via Corepack and pin classic
-RUN corepack enable && corepack prepare yarn@1.22.22 --activate
-
-# Copy only manifests first for better layer caching
-COPY package.json yarn.lock* ./
-
-# Install deps using a cache mount that is NOT inside node_modules
-RUN --mount=type=cache,target=/root/.yarn \
-    if [ -f yarn.lock ]; then \
-      yarn install --frozen-lockfile --production=true; \
-    else \
-      yarn install --production=true; \
-    fi
-
-# Now copy the rest of your app
+FROM node:20-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+# copy app and resolved deps
 COPY . .
-
-EXPOSE 8080
-CMD ["node", "apps/server/index.mjs"]
+COPY --from=deps /app/node_modules ./node_modules
+EXPOSE 3000
+CMD ["yarn","start"]
