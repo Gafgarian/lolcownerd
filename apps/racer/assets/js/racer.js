@@ -41,6 +41,21 @@ toggleBtn.addEventListener('click', () => {
 let raceState = 'grid'; // 'grid' | 'countdown' | 'green' | 'finished'
 const hud = document.querySelector('.hud');
 
+// Broadcast overlay anchor (infield, upper-left)
+// tuned so it sits fully on grass for your current layout
+const OVERLAY_ANCHOR = () => ({ x: canvas.width*0.14, y: canvas.height*0.22 });
+const OVERLAY_SIZE   = { w: 300*DPR, h: 260*DPR };
+
+const STRAIGHT_THRESH=0.0010;
+let straightRange={start:0,end:0};
+// --- Corner passing knobs ---
+const CORNER_PASS_K     = STRAIGHT_THRESH * 2.2; // how "curvy" counts as a corner
+const DUEL_ARC_PX       = 320;                   // how long to stay side-by-side (along-track px)
+const DUEL_CLEAR_GAP_PX = 155;                   // if cars separate more than this, end duel
+const EDGE_MARGIN       = { normal: 0.60, duel: 0.52 }; // edge buffer as fraction of car width
+
+const distAhead = (sA, sB) => (sB - sA + totalLen) % totalLen; // along-track distance a→b
+
 // center START/FINISH button
 const startBtn = document.createElement('button');
 startBtn.className = 'icon-btn';
@@ -130,14 +145,14 @@ function getRotatedSprite(img, angle, across, aspect, quant=48){
 /* ====== Track (reverted to stable control points) ====== */
 const CTRL_BASE = [
   /* Top */
-  [0.1,0.1],[0.2,0.1],[0.3,0.1],
+  [0.1,0.18],[0.2,0.1],[0.3,0.1],
   [0.4,0.15],[0.45,0.2],[0.5,0.22],[0.55,0.2],[0.6,0.15],
   [0.7,0.1],[0.8,0.1],[0.9,0.15],
 
   /* Right */
-  [0.92,0.2],[0.9,0.25],
-  [0.86,0.29],[0.78,0.33],[0.4,0.41],
-  [0.5,0.66],[0.78,0.5],[0.85,0.65],
+  [0.92,0.2],[0.9,0.27],
+  [0.86,0.29],[0.78,0.33],[0.35,0.5],
+  [0.38,0.63],[0.76,0.52],[0.85,0.65],
   [0.9,0.76],
 
   /* Bottom */
@@ -149,8 +164,8 @@ const CTRL_BASE = [
   /* Left */
   [0.11,0.8],[0.1,0.75],[0.1,0.7],
   [0.1,0.6],[0.1,0.5],[0.1,0.4],
-  [0.1,0.3],[0.1,0.28],[0.1,0.23],
-  [0.1,0.12],[0.2,0.1],[0.3,0.1],
+  [0.1,0.3],
+  [0.1,0.18],[0.2,0.1],[0.3,0.1],
 ];
 
 let centerline=[], totalLen=1;
@@ -174,9 +189,9 @@ function sizeCanvas(){
 
   LANE_W=Math.max(28*DPR, canvas.width*0.024);
 
-  const WIDEN = 1.30;
-  HALF_W_NORMAL=1.25*LANE_W*WIDEN;
-  HALF_W_STRAIGHT=2.00*LANE_W*WIDEN;
+  const WIDEN = 1.60;                     // global widener
+  HALF_W_NORMAL   = 1.5 * LANE_W * WIDEN;  // corners/regular
+  HALF_W_STRAIGHT = 2.10 * LANE_W * WIDEN;  // long straights
 
   buildTrack();
 }
@@ -204,9 +219,6 @@ function normToPx(pts,W,H){
   const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
   return pts.map(([x,y])=>[(x-cx)*S*W + W/2, (y-cy)*S*H + H/2]);
 }
-
-const STRAIGHT_THRESH=0.0010;
-let straightRange={start:0,end:0};
 
 function buildTrack(){
   const CTRL=normToPx(CTRL_BASE, canvas.width, canvas.height);
@@ -280,10 +292,160 @@ function halfWidthAt(i){
   return HALF_W_NORMAL*(1-t) + HALF_W_STRAIGHT*t;
 }
 
+/* ====== OVERTAKE + OVERLAY HELPERS (add) ====== */
+
+// quick distance along track taking wrap into account
+function gapAlong(meS, otherS, loopLen){
+  let g = otherS - meS;
+  if (g < 0) g += loopLen;
+  return g;
+}
+
+// return "blocking distance" ahead on a lane center (lateral target)
+function laneAheadGap(me, carsSorted, laneLat, checkDist=220){
+  let best = checkDist;
+  for (const c of carsSorted){
+    if (c === me) continue;
+    const g = gapAlong(me.s, c.s, totalLen);
+    if (g <= 0 || g > checkDist) continue;
+    if (Math.abs(c.lateral - laneLat) < CAR_ACROSS*0.75) {
+      best = Math.min(best, g);
+    }
+  }
+  return best;
+}
+
+/* ====== Broadcast overlay layout ====== */
+const OVERLAY = {
+  // anchor in the *left* infield
+  xRel: 0.23,   // was ~center; now left side
+  yRel: 0.48,
+  w: 220, rowH: 18, maxRows: 12
+};
+
+function drawPaintedTitle(){
+  // paint above the panel, left-side infield
+  const scale = DPR;
+  const panelH = (OVERLAY.maxRows + 1) * OVERLAY.rowH * scale;
+  const x = canvas.width * OVERLAY.xRel - 20 * scale;
+  const y = canvas.height * OVERLAY.yRel - panelH - 18 * scale;
+
+  ctx.save();
+  // bold, “field-paint” look: Impact with a subtle darker stroke for legibility
+  ctx.font = `${Math.round(38*scale)}px Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif`;
+  ctx.textBaseline = 'top';
+  ctx.translate(x, y);
+  ctx.rotate(-0.06);
+  ctx.lineWidth = 6 * scale;
+  ctx.strokeStyle = 'rgba(60,50,20,0.35)';
+  ctx.strokeText('LCU Grand Prix', 0, 0);
+  ctx.fillStyle = '#d4af37';
+  ctx.globalAlpha = 0.85;
+  ctx.fillText('LCU Grand Prix', 0, 0);
+  ctx.restore();
+}
+
+const fmtGap = ms => {
+  const s  = Math.floor(ms / 1000);
+  const cs = Math.floor((ms % 1000) / 10);
+  return `+${String(s).padStart(2,'0')}.${String(cs).padStart(2,'0')}`;
+};
+// rolling average lap time so gaps feel consistent
+let _lapSamples = [];
+const avgLapMs = () => {
+  if (!_lapSamples.length) return 45000; // fallback ~45s
+  return _lapSamples.reduce((a,b)=>a+b,0) / _lapSamples.length;
+};
+
+function fmtPlus(ms){
+  if (!isFinite(ms)) return '—';
+  const s  = Math.floor(ms/1000);
+  const cs = Math.floor((ms%1000)/10);
+  return `+${String(s).padStart(2,'0')}.${String(cs).padStart(2,'0')}`;
+}
+
+function drawBroadcastOverlay(){
+  const {x, y} = OVERLAY_ANCHOR();
+  const {w, h} = OVERLAY_SIZE;
+
+  // panel
+  ctx.save();
+  ctx.fillStyle = 'rgba(14,16,20,0.78)';  // slightly more translucent
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 10*DPR);
+  ctx.fill();
+  ctx.stroke();
+
+  // headers
+  const px = x + 12*DPR, py = y + 10*DPR, lh = 18*DPR;
+  ctx.font = `${12*DPR}px Inter, system-ui, sans-serif`;
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillText('P', px, py);
+  ctx.fillText('Lap', px + 22*DPR, py);
+  ctx.fillText('Team', px + 62*DPR, py);
+  ctx.fillText('Time', px + w - 68*DPR, py);
+
+  // standings
+  const order = [...cars].sort((a,b)=> raceDistance(b) - raceDistance(a));
+  const lead  = order[0];
+  const leadTime = lead.lastLapMs ?? 0;
+
+  for (let i=0;i<order.length;i++){
+    const c = order[i];
+    const rowY = py + (i+1)*lh + 6*DPR;
+
+    // P
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.fillText(String(i+1), px, rowY);
+
+    // Lap
+    ctx.fillText(String(c.lap), px + 22*DPR, rowY);
+
+    // Name (with little color box)
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.fillText(c.team.name, px + 72*DPR, rowY);
+
+    // Times: leader shows last lap, others show +delta to leader’s last lap
+    const txt = (i===0 && c.lastLapMs)
+      ? fmtLap(c.lastLapMs)
+      : (c.lastLapMs ? `+${fmtDelta((c.lastLapMs - leadTime))}` : '—');
+    const tw = ctx.measureText(txt).width;
+    ctx.fillText(txt, x + w - 12*DPR - tw, rowY);
+  }
+
+  ctx.restore();
+}
+
+// helper for +ss.cc style deltas (not full m:ss)
+function fmtDelta(ms){
+  const s  = Math.floor(ms/1000);
+  const cs = Math.floor((ms%1000)/10);
+  return `${String(s).padStart(2,'0')}.${String(cs).padStart(2,'0')}`;
+}
+
 /* ====== Pit lane & start/finish ====== */
 let pitSep=null, pitEntryIdx=0, pitExitIdx=0, pitIds=[];
 let pitIdSet = new Set();
 let pitLanePoints = []; 
+
+// choose an index on the left vertical straight for S/F
+function chooseStartFinishOnLeft() {
+  let bestI = 0, bestScore = Infinity;
+  const wantY = canvas.height * 0.72;               // lower half looks better for the grid
+  for (let i = 0; i < centerline.length; i++) {
+    const p = centerline[i];
+    // prefer very straight bits near the far left (small x), and near wantY
+    if (p.curv < STRAIGHT_THRESH * 0.6) {
+      const score = (p.x) + 0.003 * Math.abs(p.y - wantY);
+      if (score < bestScore) { bestScore = score; bestI = i; }
+    }
+  }
+  
+  startLineIndex = pitIds[Math.floor((pitEntryIdx + pitExitIdx) / 2)];
+  startLineS     = centerline[startLineIndex].s;  
+}
 
 function buildPitRoad(){
   pitSep = new Path2D();
@@ -343,8 +505,7 @@ function buildPitRoad(){
     const score = p.y - Math.abs(j - midJ)*4; // prefer lower (larger y) & near middle
     if (score > best.score) best = { j, score };
   }
-  startLineIndex = pitIds[Math.max(0, pitEntryIdx)];  
-  startLineS     = centerline[startLineIndex].s;
+  chooseStartFinishOnLeft();
 
   buildPitStalls();
 }
@@ -486,33 +647,28 @@ function drawTrack(){
   drawStartFinish();
 }
 
+// ----- START/FINISH CHEQUER (replace your current S/F drawing) -----
 function drawStartFinish() {
-  // draw a checkerboard strip centered at the S/F index, perpendicular to flow
-  const cl = centerline[startLineIndex];
-  if (!cl) return;
-
-  const thickness = 18 * DPR;               // strip “length” along the tangent
-  const halfAcross = HALF_W_STRAIGHT * 0.95; // span across most of the road
-  const cell = 10 * DPR;                    // checker size
-
+  // Start/Finish – mid pit straight
+  const sf = centerline[startLineIndex];
   ctx.save();
-  ctx.translate(cl.x, cl.y);
-  ctx.rotate(cl.theta);                     // x = along track, y = across track
-
-  // dark base
-  ctx.fillStyle = '#0e0f12';
-  ctx.fillRect(-thickness/2, -halfAcross, thickness, 2*halfAcross);
-
-  // white/black checkers
-  for (let y = -halfAcross, i = 0; y < halfAcross; y += cell, i++) {
-    // alternate columns left/right for a checker effect
-    const leftW  = thickness/2, rightW = thickness/2;
-    ctx.fillStyle = (i % 2 === 0) ? '#fff' : '#111';
-    ctx.fillRect(-thickness/2, y, leftW, cell);
-    ctx.fillStyle = (i % 2 === 0) ? '#111' : '#fff';
-    ctx.fillRect(0,              y, rightW, cell);
+  ctx.translate(sf.x, sf.y);
+  ctx.rotate(sf.theta);
+  const w = 8*DPR, h = HALF_W_STRAIGHT*0.92;  // short, across the lane width
+  // draw black base
+  ctx.fillStyle = '#0c0d10';
+  ctx.fillRect(-w/2, -h, w, 2*h);
+  // checkers
+  const cells = 18;                    // little tiles
+  const cellH = (2*h)/cells;
+  for (let i=0;i<cells;i++){
+   ctx.fillStyle = (i%2 ? '#fff' : '#000');
+   ctx.fillRect(-w/2, -h + i*cellH, w, cellH);
   }
   ctx.restore();
+
+  // "paint" the title on the asphalt nearby (subtle)
+  drawPaintedTitle();   // NEW
 }
 
 /* distance → sample */
@@ -584,10 +740,10 @@ function buildCoefficients(stats){
   const f = (x, lo=0.70, step=0.06)=> lo + step*x;
   const clip = (v,a,b)=>Math.max(a,Math.min(b,v));
 
-  const speedF = 0.88 + 0.03*stats.spd;
+  const speedF = 1.2 + 0.03*stats.spd;
   const accelF = f(stats.acc, 0.65, 0.055);
   const brakeF = 1.0;
-  const cornerK= 120 / f(stats.han, 0.70, 0.06);
+  const cornerK= 80 / f(stats.han, 0.70, 0.06);
 
   const risk   = stats.rsk;
   const safeGap = clip(65 * (1.20 - 0.05*risk), 35, 85);
@@ -631,7 +787,11 @@ async function setupCars(){
       lateral:0, targetLateral:0,
       energy: 1,
       planPitLap: null,         
+      duelToS: -1,        // along-track S where we stop committing to side-by-side
+      duelSide: 0,        // -1 = left/inside on left-handers, +1 = right/inside on right-handers
+      duelWith: null,     // reference to car we’re dueling with (or null)
       lapsSincePit: 0,
+      pitArmedLap: null, 
       wantPit: false, 
       inPit: false,
       pitState: 'none',           // 'none' | 'entering' | 'servicing' | 'exiting'
@@ -641,6 +801,7 @@ async function setupCars(){
       pitTargetMs: 0,
       bestPitMs: Infinity,
       lapStartMs: performance.now(),
+      lastLapMs: Infinity,
       bestLapMs: Infinity,
       prevS: 0,
       stats, cfg,
@@ -693,9 +854,9 @@ function laneOccupancy(i, myS, windowPx=140){
 }
 
 function raceDistance(car){
-  // distance since race start, normalized to the S/F index
   return car.lap * totalLen + ((car.s - startLineS + totalLen) % totalLen);
 }
+
 /* ====== Physics ====== */
 function physicsStep(dt){
   const order = [...cars].sort((a,b)=> raceDistance(b) - raceDistance(a));
@@ -709,15 +870,25 @@ function physicsStep(dt){
     // current sample and lap timing on the start/finish line only
     const pMe = sampleAtS(me.s);
     const sNow = centerline[pMe.i].s;
+
+    const width       = halfWidthAt(pMe.i);
+    const straightish = (straightBlend(pMe.i) > 0.5) || (pMe.curv < STRAIGHT_THRESH*0.55);
+    const inCorner    = pMe.curv > CORNER_PASS_K;
+
     const crossed = (me.prevS <= startLineS && sNow > startLineS) ||
                     (me.prevS >  sNow && (me.prevS <= startLineS || sNow > startLineS));
     if (crossed) {
       const now = performance.now();
       const lapMs = now - me.lapStartMs;
-      if (lapMs > 1000) me.bestLapMs = Math.min(me.bestLapMs, lapMs);
+      if (lapMs > 1000) {
+        me.lastLapMs = lapMs;
+        _lapSamples.push(lapMs);
+        if (_lapSamples.length > 40) _lapSamples.shift();
+        me.bestLapMs = Math.min(me.bestLapMs, lapMs);
+      }
       me.lapStartMs = now;
       me.lap++;
-      me.lapsSincePit++;
+      me.lapsSincePit += 1;
     }
     me.prevS = sNow;
 
@@ -754,6 +925,18 @@ function physicsStep(dt){
           const stall = assignPitStall();
           if (stall >= 0) { me.pitState='entering'; me.pitStall=stall; me.inPit=true; }
         }
+      }
+    }
+
+    // ----- PIT INTENT (armed after S/F, baseline >=4 laps) -----
+    if (me.pitState==='none' && !me.wantPit) {
+      const baseReady = me.lapsSincePit >= 4;
+      const lowEnergy = me.energy < (0.34 - 0.02*me.stats.end + 0.02*(10 - me.stats.rsk));
+      if (baseReady && lowEnergy && me.pitArmedLap == null) {
+        me.pitArmedLap = me.lap + 1;        // may pit after NEXT time over S/F
+      }
+      if (me.pitArmedLap != null && me.lap >= me.pitArmedLap) {
+        me.wantPit = true;
       }
     }
 
@@ -825,6 +1008,8 @@ function physicsStep(dt){
         me.inPit    = false;
         me.wantPit  = false;
         me.pitState = 'none';
+        me.lapsSincePit = 0;         
+        me.pitArmedLap = null;  
       }
       continue;
     }
@@ -833,12 +1018,93 @@ function physicsStep(dt){
     // target speed from curvature (with fatigue) and simple car-ahead logic
     const tv = targetSpeedForS(me.s, cfg)*fatigueFactor + me.boost;
     const sideBySideClear = ahead ? (Math.abs(me.lateral - ahead.lateral) > CAR_ACROSS*0.95) : false;
-    if(gap < cfg.SAFE_GAP && !sideBySideClear) me.v = Math.max(cfg.V_MIN, me.v - cfg.BRAKE*dt*1.2);
-    else if(me.v < tv)                          me.v = Math.min(tv, me.v + cfg.ACCEL*dt);
-    else                                        me.v = Math.max(tv, me.v - cfg.BRAKE*dt);
+    const duelActive = me.duelWith != null && distAhead(me.s, me.duelToS) > 0 && distAhead(me.s, me.duelToS) < DUEL_ARC_PX;
 
-    // (optional) simple 3-wide aiming – keep as you had it
-    // me.targetLateral = ... // your overtake logic here if desired
+    // more tolerant braking if we're in a duel (so we don't glue up)
+    const effectiveSafeGap = duelActive ? cfg.SAFE_GAP * 0.55 : cfg.SAFE_GAP;
+
+    if (gap < effectiveSafeGap && !sideBySideClear && !duelActive) {
+      me.v = Math.max(cfg.V_MIN, me.v - cfg.BRAKE*dt*1.2);
+    } else if (me.v < tv) {
+      me.v = Math.min(tv, me.v + cfg.ACCEL*dt);
+    } else {
+      me.v = Math.max(tv, me.v - cfg.BRAKE*dt);
+    }
+
+    if (duelActive) {
+      // stay committed near the inside edge (or outside if we chose that)
+      const sign = me.duelSide || (pMe.ksign > 0 ? -1 : 1);
+      const target = sign * width * 0.85; // close to the apex/edge
+      me.targetLateral = target;
+    }
+
+    // ----- OVERTAKE / dynamic lane choice (three-wide) -----
+    if ((straightish || width > CAR_ACROSS*1.30) && me.pitState==='none') {
+     const usable = Math.max(0, width - CAR_ACROSS*0.55);      // smaller center margin
+     const laneOffset = Math.min(usable, LANE_W*1.30);
+     const lanes = (width > CAR_ACROSS*1.80)
+       ? [-laneOffset, 0, laneOffset]                           // 3-wide when truly wide
+       : [-laneOffset*0.9, laneOffset*0.9];                     // 2-wide on narrower
+
+      // look ahead clearance per lane
+      const laneGaps = lanes.map(L => laneAheadGap(me, order, L, 240));
+
+      // score: prefer clear air but keep lateral stability
+      let bestIdx = 0, bestScore = -1e9;
+      for (let i=0;i<lanes.length;i++){
+        const dist = Math.abs(me.lateral - lanes[i]);
+        const score = laneGaps[i] - dist*0.5;
+        if (score > bestScore){ bestScore = score; bestIdx = i; }
+      }
+
+      // move only if it helps
+      if (laneGaps[bestIdx] > 70) {
+        me.targetLateral = lanes[bestIdx];
+      } else if (ahead) {
+        // try side opposite of the car ahead to peek out
+        me.targetLateral = (ahead.lateral >= 0 ? -1 : 1) * laneOffset*0.85;
+      }
+
+      if (ahead && lanes.length >= 2) {
+        const chosen = lanes[bestIdx];
+        const sep   = Math.abs(chosen - ahead.lateral);
+        if (sep > CAR_ACROSS*0.45 && gap < cfg.SAFE_GAP) {
+          me.v = Math.min(tv, me.v + cfg.ACCEL*dt*0.5);
+        }
+      }      
+    } else if (me.pitState==='none') {
+      // tighter corners: blend toward center to set the car for the exit
+      me.targetLateral *= 0.90;
+    }
+
+    // --- Corner pass intent: start a side-by-side duel ---
+    if (!straightish && ahead) {
+      const aheadTv = targetSpeedForS(ahead.s, ahead.cfg) + ahead.boost;
+      const clearlyQuicker = (tv - aheadTv) > (cfg.OVERTAKE_DELTA * 0.50); // easier in corners
+      const closeEnough    = gap < 140;
+
+      if (inCorner && clearlyQuicker && closeEnough && me.duelWith == null) {
+        // inside = toward apex; ksign>0 means apex is to the left of local normal (so lateral negative)
+        me.duelSide = (pMe.ksign > 0 ? -1 : 1);  // choose inside by default
+        me.duelToS  = (me.s + DUEL_ARC_PX) % totalLen;
+        me.duelWith = ahead; // remember who we're next to
+        // bias immediately to our side to get overlap
+        me.targetLateral = me.duelSide * width * 0.85;
+      }
+    }
+
+    // --- Duel termination conditions ---
+    if (me.duelWith) {
+      const stillAhead = me.duelWith && distAhead(me.s, me.duelWith.s) < DUEL_CLEAR_GAP_PX;
+      const duelTimeLeft = distAhead(me.s, me.duelToS) > 0 && distAhead(me.s, me.duelToS) < DUEL_ARC_PX;
+
+      // release if we've cleared them, fell back, or the arc is over
+      if (!duelTimeLeft || !stillAhead || straightish) {
+        me.duelWith = null;
+        me.duelSide = 0;
+        me.duelToS  = -1;
+      }
+    }
 
     // update position and project to world
     me.s += me.v * dt;
@@ -853,7 +1119,11 @@ function physicsStep(dt){
     // lateral blend
     const LAT = 0.005 * dt * clamp(halfWidthAt(p2.i), 40, 160);
     me.lateral += clamp(me.targetLateral - me.lateral, -LAT, LAT);
-    me.lateral = clamp(me.lateral, -halfWidthAt(p2.i)+CAR_ACROSS*0.6, halfWidthAt(p2.i)-CAR_ACROSS*0.6);
+    const edgeMargin = (duelActive ? EDGE_MARGIN.duel : EDGE_MARGIN.normal);
+    me.lateral = clamp(me.lateral,
+      -halfWidthAt(p2.i) + CAR_ACROSS*edgeMargin,
+       halfWidthAt(p2.i) - CAR_ACROSS*edgeMargin
+    );
   }
 }
 
@@ -929,10 +1199,11 @@ lbList.addEventListener('click', (e)=>{
 
 let lastLB=0, lbSig="";
 const LB_EVERY=300;
+
 function renderLeaderboard(now){
   if(now - lastLB < LB_EVERY) return;
   const order=[...cars].sort((a,b)=> raceDistance(b) - raceDistance(a));
-  const sig=order.map(c=>`${c.team.id}:${c.lap}:${Math.floor(((c.s - startLineS + totalLen) % totalLen))}`).join('|');
+  const sig=order.map(c=>`${c.team.id}:${Math.floor(raceDistance(c))}`).join('|');
   if(sig===lbSig) return; lbSig=sig; lastLB=now;
   lbList.innerHTML=order.map((c,idx)=>`
     <li class="lb-item" data-team="${c.team.id}" data-pos="${idx+1}">
@@ -1013,6 +1284,7 @@ tinyPause.addEventListener('click', ()=>{
 /* ====== Main loop (fixed timestep) ====== */
 const STEP=1000/120;
 let accumulator=0, last=performance.now();
+
 function frame(now){
   let dt=now - last; last=now; dt=Math.min(dt,100);
   accumulator += dt;
@@ -1022,7 +1294,10 @@ function frame(now){
     accumulator -= STEP; iters++;
   }
   const alpha=accumulator/STEP;
-  drawTrack(); drawCars(alpha); renderLeaderboard(now);
+  drawTrack();
+  drawCars(alpha);
+  drawBroadcastOverlay();
+  renderLeaderboard(now);
 
   // live-update modal if open
   if (currentModalCar && modal.classList.contains('show')) {

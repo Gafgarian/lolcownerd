@@ -1,0 +1,29 @@
+{
+  "scale": {
+    "min": 1,
+    "max": 10
+  },
+  "teams": {
+    "cafe":     { "SPD": 4, "ACC": 4, "HAN": 6, "PIT": 4, "END": 4, "RSK": 7 },
+    "reaper":   { "SPD": 9, "ACC": 4, "HAN": 6, "PIT": 5, "END": 3, "RSK": 6 },
+    "test":     { "SPD": 5, "ACC": 5, "HAN": 4, "PIT": 7, "END": 7, "RSK": 5 },
+    "nerd":     { "SPD": 5, "ACC": 6, "HAN": 7, "PIT": 5, "END": 8, "RSK": 7 },
+    "queens":   { "SPD": 8, "ACC": 8, "HAN": 6, "PIT": 3, "END": 7, "RSK": 9 },
+    "live":     { "SPD": 9, "ACC": 10, "HAN": 5, "PIT": 4, "END": 10, "RSK": 2 },
+    "techtalk": { "SPD": 7, "ACC": 7, "HAN": 6, "PIT": 5, "END": 9, "RSK": 2 },
+    "rewind":   { "SPD": 8, "ACC": 8, "HAN": 8, "PIT": 8, "END": 9, "RSK": 1 },
+    "balls":    { "SPD": 6, "ACC": 6, "HAN": 4, "PIT": 6, "END": 6, "RSK": 3 },
+    "aussy":    { "SPD": 5, "ACC": 6, "HAN": 3, "PIT": 6, "END": 9, "RSK": 9 },
+    "chubby":   { "SPD": 2, "ACC": 4, "HAN": 6, "PIT": 5, "END": 2, "RSK": 2 },
+    "nuts":     { "SPD": 1, "ACC": 1, "HAN": 1, "PIT": 1, "END": 1, "RSK": 1 }
+  },
+  "upgrades": {
+    "engine_kit":      { "ACC": 1,  "SPD": 1,   "durationLaps": 0 },
+    "aero_package":    { "HAN": 1,  "SPD": 0.5, "durationLaps": 0 },
+    "pit_drills":      { "PIT": 2,  "durationLaps": 0 },
+    "endurance_pack":  { "END": 2,  "durationLaps": 0 },
+    "risk_map_update": { "RSK": -1, "durationLaps": 0 },
+    "qualy_trim":      { "SPD": 2,  "END": -1,  "durationLaps": 5 },
+    "soft_tyre_set":   { "HAN": 2,  "END": -1,  "durationLaps": 8 }
+  }
+}

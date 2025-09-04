@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>LCU Grand Prix – Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="./styles.css"/>
+  <script>
+    // Option A: hardcode token here (for demos only)
+    // window.ADMIN_TOKEN = 'super-secret-token';
+
+    // Option B: leave undefined and admin.js will prompt on load.
+  </script>
+</head>
+<body>
+  <header class="hud">
+    <div class="hud-left">
+      <button id="startBtn" class="icon-btn">START</button>
+      <button id="pauseBtn" class="icon-btn">Pause</button>
+      <button id="finishBtn" class="icon-btn">Finish</button>
+    </div>
+    <div class="hud-spacer"></div>
+    <div class="hud-right">
+      <label style="margin-right:8px">
+        Car:
+        <select id="kartSelect"></select>
+      </label>
+      <button id="boostBtn" class="icon-btn">+Boost</button>
+    </div>
+  </header>
+
+  <canvas id="racerCanvas"></canvas>
+
+  <script src="./js/viewer.js" type="module"></script>
+  <script src="./js/admin.js" type="module"></script>
+</body>
+</html>

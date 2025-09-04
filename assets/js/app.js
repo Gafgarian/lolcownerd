@@ -372,6 +372,8 @@ function openItem(item) {
 
 function appsListHTML() {
   const apps = [
+    { slug: "garages", label: "LCU Grand Prix - Garages" },
+    { slug: "racer", label: "LCU Grand Prix - Track" },
     { slug: "balls", label: "Dragonball Scanner" },
     { slug: "becky", label: "Becky Ball" },
     { slug: "deal", label: "Deal or no Deal" },
