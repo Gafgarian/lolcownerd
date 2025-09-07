@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>LCU Garages</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="garages.css" />
+</head>
+<body>
+  <a class="to-track btn" href="index.html" title="Back to Race">Go To Track</a>
+
+  <main class="page">
+    <section class="section">
+      <h1 class="section-title glow">LCU Show Garages</h1>
+      <div id="showGrid" class="garage-grid"></div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title glow">👑 Crown Garages 👑</h2>
+      <div id="crownGrid" class="garage-grid crown-grid"></div>
+    </section>
+  </main>
+
+  <!-- Modal -->
+  <div id="garageModal" class="modal" aria-hidden="true">
+    <div class="backdrop" id="modalBackdrop"></div>
+
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <button id="modalClose" class="icon-btn close" aria-label="Close">✕</button>
+
+      <div class="scene" id="scene">
+        <img id="bgImg" class="bg-img" alt="" />
+
+        <!-- reflection & floor effects -->
+        <div id="floorFx" class="floor-fx"></div>
+        <img id="carRef"  class="car-reflect" alt="" />
+        <img id="carSide" class="car-side" alt="Team car" />
+
+        <!-- stats toggle (bottom-right) -->
+        <button id="statsToggle" class="icon-btn wrench" aria-label="Open Upgrades"></button>
+
+        <!-- slide-over panel -->
+        <aside id="statsPanel" class="stats-panel" aria-label="Upgrades & Stats">
+          <button id="statsClose" class="icon-btn panel-close" aria-label="Close Panel">✕</button>
+
+          <div class="panel-actions">
+            <button id="btnAddUp" class="btn btn-accent">Add Upgrade</button>
+          </div>
+
+          <!-- Overhead preview -->
+          <div class="overhead">
+            <img id="carTop" alt="Overhead view" />
+          </div>
+
+          <!-- Base stats (from assets/config/cars.json) -->
+          <div class="stats-list two-col" aria-live="polite">
+            <div class="stat"><span>SPD</span><strong id="valSPD">—</strong></div>
+            <div class="stat"><span>ACC</span><strong id="valACC">—</strong></div>
+            <div class="stat"><span>HAN</span><strong id="valHAN">—</strong></div>
+            <div class="stat"><span>PIT</span><strong id="valPIT">—</strong></div>
+            <div class="stat"><span>END</span><strong id="valEND">—</strong></div>
+            <div class="stat"><span>RSK</span><strong id="valRSK">—</strong></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/garages.js"></script>
+</body>
+</html>

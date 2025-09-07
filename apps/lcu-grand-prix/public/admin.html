@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <title>LCU Grand Prix – Admin</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <link rel="stylesheet" href="./styles.css"/>
+  <link rel="stylesheet" href="styles.css"/>
   <script>
     // Option A: hardcode token here (for demos only)
     // window.ADMIN_TOKEN = 'super-secret-token';
@@ -13,23 +13,71 @@
   </script>
 </head>
 <body>
-  <header class="hud">
-    <div class="hud-left">
-      <button id="startBtn" class="icon-btn">START</button>
-      <button id="pauseBtn" class="icon-btn">Pause</button>
-      <button id="finishBtn" class="icon-btn">Finish</button>
-    </div>
+  <!-- header -->
+  <div class="hud" id="hud">
+    <div class="brand">LCU Grand Prix - Admin</div>
     <div class="hud-spacer"></div>
     <div class="hud-right">
-      <label style="margin-right:8px">
-        Car:
-        <select id="kartSelect"></select>
-      </label>
-      <button id="boostBtn" class="icon-btn">+Boost</button>
+      <button id="openAdminPanel" class="ghost-btn admin-fab" aria-expanded="false">Admin</button>
     </div>
-  </header>
+  </div>
 
-  <canvas id="racerCanvas"></canvas>
+  <main class="stage">
+    <canvas id="racerCanvas"></canvas>
+  </main>
+
+  <!-- slide-out panel -->
+
+  <aside id="adminPanel" class="side-panel" aria-hidden="true">
+    <div class="side-head">
+      <div class="side-title">Race Panel</div>
+      <!-- nothing else here; parser disconnect lives below -->
+    </div>
+
+    <div class="side-scroll">
+      <!-- Start / Pause -->
+      <div class="panel-group">
+        <div class="panel-row">
+          <button id="startBtn" class="start-btn">START</button>
+          <button id="pauseBtn" class="icon-btn" title="Pause">⏸</button>
+        </div>
+        <div class="hint">Only available before the start.</div>
+      </div>
+
+      <!-- Starting lineup (only visible while state === grid) -->
+      <section id="adminGrid" class="panel-group" hidden>
+        <strong>Starting Lineup</strong>
+        <ul id="gridList" class="grid-list"></ul>
+        <button id="applyGridBtn" class="btn primary">Apply Lineup</button>
+      </section>
+
+      <!-- Chat-parser connection (has Connect/Disconnect inside) -->
+      <section class="panel-group">
+        <strong>Chat-Parser Connection</strong>
+        <div class="row">
+          <label for="parserUrl">Parser Origin</label>
+          <input id="parserUrl" placeholder="https://your-parser.example" style="flex:1; min-width: 220px;">
+          <button id="parserConnect" class="btn">Connect</button>
+          <button id="parserDisconnect" class="btn">Disconnect</button>
+        </div>
+        <pre id="adminLog" class="admin-log"></pre>
+      </section>
+    </div>
+  </aside>
+
+  <div id="finishModal" class="modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-dialog podium" role="dialog" aria-modal="true" aria-labelledby="finishTitle">
+      <button class="modal-close" data-close>✕</button>
+      <h2 id="finishTitle">Race Results</h2>
+      <div class="podium-wrap">
+        <div class="place second"><img id="pod2"><div class="label" id="lab2"></div></div>
+        <div class="place first"><img id="pod1"><div class="label" id="lab1"></div></div>
+        <div class="place third"><img id="pod3"><div class="label" id="lab3"></div></div>
+      </div>
+      <button id="resetRaceBtn" class="primary">Reset Race</button>
+    </div>
+  </div>
 
   <script src="./js/viewer.js" type="module"></script>
   <script src="./js/admin.js" type="module"></script>

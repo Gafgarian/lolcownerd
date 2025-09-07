@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node apps/server/index.mjs"
+    "start": "node apps/server/index.mjs",
+    "dev": "concurrently -k -p \"[{name}]\" -c \"cyan,magenta\" \"yarn:dev:server\" \"yarn:dev:client\"",
+    "dev:server": "nodemon --config nodemon.json",
+    "dev:client": "browser-sync start --config browser-sync.config.cjs"
   },
   "engines": {
     "node": ">=18"
@@ -12,5 +15,10 @@
     "express": "^4.19.2",
     "node-fetch": "^2.7.0",
     "ws": "^8.17.0"
+  },
+  "devDependencies": {
+    "browser-sync": "^3.0.4",
+    "concurrently": "^9.2.1",
+    "nodemon": "^3.1.10"
   }
 }

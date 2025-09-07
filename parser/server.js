@@ -1,8 +1,17 @@
-// server.js
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { nanoid } from 'nanoid';
 import { chromium } from 'playwright';
+import { createClient } from '@supabase/supabase-js';
+
+console.log(process.env.SUPABASE_URL);
+
+// ── Supabase init (NEW) ──
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE || process.env.SUPABASE_ANON_KEY || '';
+const sb = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
 
 /* ───────────────────────────── logging controls ───────────────────────────── */
 
@@ -156,6 +165,75 @@ app.use(express.static('public'));
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
 /* -------------------------- helpers & enrichment --------------------------- */
+// ── Membership level extraction ──
+const MEMBERSHIP_LEVELS = ['ban world','cash cow','pay pig','crown'];
+
+function extractMembershipLevel(raw) {
+  const hay = `${raw?.header || ''} ${raw?.message || ''}`.toLowerCase();
+  for (const lvl of MEMBERSHIP_LEVELS) {
+    if (hay.includes(lvl)) return lvl;        // exact level hit
+  }
+  // final regex fallback (case-insensitive, handles extra spaces)
+  const m = hay.match(/\b(ban\s+world|cash\s+cow|pay\s+pig|crown)\b/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+async function sbUpsertStream(videoId, title) {
+  if (!sb) return null;
+  const { data, error } = await sb
+    .from('streams')
+    .upsert({ video_id: videoId, title }, { onConflict: 'video_id' })
+    .select()
+    .single();
+  if (error) log.warn('[supabase upsert stream]', error.message);
+  return data || null;
+}
+async function sbUpdateStreamTitle(streamId, title) {
+  if (!sb || !streamId || !title) return;
+  await sb.from('streams').update({ title }).eq('id', streamId);
+}
+
+async function sbUpdateMaxViewers(streamId, proposed) {
+  if (!sb || !streamId || !Number.isFinite(proposed) || proposed <= 0) return;
+  await sb
+    .from('streams')
+    .update({ max_viewers: proposed })
+    .eq('id', streamId)
+    .lt('max_viewers', proposed)
+    .select('id'); // no-op if stored >= proposed
+}
+
+async function sbInsertEvent(streamId, ev) {
+  if (!sb || !streamId) return;
+
+  const row = {
+    stream_id: streamId,
+    at: new Date(ev.at || Date.now()).toISOString(),
+    type: ev.type,
+    author: ev.author || null,
+
+    // For membership events, store the LEVEL as the message
+    message: ev.type === 'membership'
+      ? (ev.membershipLevel || ev.message || 'member')
+      : (ev.message || null),
+
+    amount_text: ev.amount || null,
+    amount_float: ev.amountFloat || null,
+    currency: ev.currencyGuess || null,
+    tier: ev.tier || 'unknown',
+    yt_color: ev.color || (ev.colorVars && ev.colorVars.primary) || null,
+    gift_count: ev.type === 'gift' ? (ev.count || 1) : null
+  };
+
+  const { error } = await sb.from('stream_events').insert(row);
+  if (error) console.error('[SB] insert event:', error.message, row);
+}
+
+async function sbInsertViewerSnapshot(streamId, viewers) {
+  if (!sb || !streamId || typeof viewers !== 'number') return;
+  await sb.from('viewer_snapshots').insert({ stream_id: streamId, viewers });
+}
+
 function toPopoutUrl(inputUrl) {
   try {
     const url = new URL(inputUrl);
@@ -256,8 +334,16 @@ function enrichAndFilter(raw, videoId) {
       if (!count || count < 1) count = 1;
       return { type: 'gift', ...base, count };
     }
-    case 'membership':
-      return { type: 'membership', ...base, header: raw.header || '' };
+    case 'membership': {
+      const level = extractMembershipLevel(raw);
+      return {
+        type: 'membership',
+        ...base,
+        header: raw.header || '',
+        message: level || 'member',    
+        membershipLevel: level || null 
+      };
+    }
     case 'milestone': {
       const text = `${raw.header || ''} ${raw.message || ''}`;
       const mm = text.match(/(\d+)\s*month/i);
@@ -304,10 +390,18 @@ async function startSession(url, idArg) {
     sessions.set(id, {
       browser, context, page,
       sinks: (sessions.get(id)?.sinks) || new Set(),
-      videoId, meta: {},
+      videoId, meta: { title: undefined, viewers: undefined, maxViewers: 0 },
       metaTimer: null, metaBusy: false,
       watchdogTimer: null, idleCheckTimer: null, onAutoStop: null
     });
+
+    const streamRow = await sbUpsertStream(videoId, '');
+    const sInit = sessions.get(id);
+    if (sInit) {
+      sInit.streamId = streamRow?.id || null;
+      // Seed meta with the stored high-watermark so reconnects don't start at 0.
+      sInit.meta = { title: undefined, viewers: undefined, maxViewers: Number(streamRow?.max_viewers) || 0 };
+    }
 
     /* ── page log filtering ── */
     page.on('console', msg => {
@@ -361,7 +455,11 @@ async function startSession(url, idArg) {
 
       if (payload && payload.type && payload.type !== 'status') lastChatAt = Date.now();
       const enriched = enrichAndFilter(payload, videoId);
-      if (enriched) push(enriched);
+      if (enriched) {
+        push(enriched);
+        const s = sessions.get(id);
+        if (s?.streamId) sbInsertEvent(s.streamId, enriched).catch(()=>{});
+      }
     });
 
     /* -------------------------- idle closer + autostop -------------------------- */
@@ -719,42 +817,72 @@ async function startSession(url, idArg) {
       }
     }
 
-    let lastMeta = { title: undefined, viewers: undefined };
+    const seeded = Number((sessions.get(id)?.meta || {}).maxViewers) || 0;
+
+    let lastMeta = { title: undefined, viewers: undefined, maxViewers: seeded };
     const sMeta = sessions.get(id); sMeta.meta = lastMeta;
 
     const pollMeta = async () => {
-      const s = sessions.get(id);
-      if (!s || s.metaBusy) return;
-      s.metaBusy = true;
+      const s0 = sessions.get(id);
+      if (!s0 || s0.metaBusy) return;
+      s0.metaBusy = true;
+
+      let merged; // <-- hoisted so 'finally' can see it
+
       try {
-        const { title, viewers, via } = await awaitMetaFromNewPage(s.context, watch, id);
+        const { title, viewers, via } = await awaitMetaFromNewPage(s0.context, watch, id);
 
-        const merged = {
-          title:   title && title.length ? title : lastMeta.title,
-          viewers: (typeof viewers === 'number') ? viewers : lastMeta.viewers
+        merged = {
+          title:   title && title.length ? title : (s0.meta?.title ?? undefined),
+          viewers: (typeof viewers === 'number') ? viewers : (s0.meta?.viewers ?? undefined),
+          maxViewers: Number(s0.meta?.maxViewers) || 0
         };
+        if (typeof merged.viewers === 'number') {
+          merged.maxViewers = Math.max(merged.maxViewers, merged.viewers);
+        }
+        s0.meta = merged;
 
-        s.meta = merged;
-
+        const last = lastMeta || { title: undefined, viewers: undefined, maxViewers: 0 };
         const changed =
-          merged.title !== lastMeta.title ||
-          merged.viewers !== lastMeta.viewers ||
-          (lastMeta.viewers === undefined && typeof merged.viewers === 'number');
+          merged.title !== last.title ||
+          merged.viewers !== last.viewers ||
+          merged.maxViewers !== last.maxViewers;
 
         if (changed) {
           lastMeta = merged;
           push({ type: 'meta', at: Date.now(), videoId, ...merged });
-          slog(id, `meta updated -> viewers:${merged.viewers} titleLen:${(merged.title||'').length} ${via?`via:${via}`:''}`);
+
+          // Persist (title/snapshot/conditional max update)
+          if (s0.streamId) {
+            if (typeof merged.title === 'string' && merged.title.length) {
+              sbUpdateStreamTitle(s0.streamId, merged.title).catch(()=>{});
+            }
+            if (typeof merged.viewers === 'number') {
+              sbInsertViewerSnapshot(s0.streamId, merged.viewers).catch(()=>{});
+            }
+            if (Number.isFinite(merged.maxViewers)) {
+              sbUpdateMaxViewers(s0.streamId, merged.maxViewers).catch(()=>{});
+            }
+          }
+
+          slog(id, `meta updated -> viewers:${merged.viewers} max:${merged.maxViewers} titleLen:${(merged.title||'').length} ${via?`via:${via}`:''}`);
         } else if (META_VERBOSE) {
-          slog(id, `meta unchanged (titleLen:${(merged.title||'').length} viewers:${merged.viewers})`);
+          slog(id, `meta unchanged (titleLen:${(merged.title||'').length} viewers:${merged.viewers} max:${merged.maxViewers})`);
         }
       } catch (e) {
-        slog(id, `meta error`, String(e?.message || e));
+        slog(id, 'meta error', String(e?.message || e));
       } finally {
         const s2 = sessions.get(id);
-        if (s2) s2.metaBusy = false;
+        if (s2) s2.metaBusy = false; // <-- always release the lock
+
+        // Extra safety: only attempt the DB bump if we actually computed a merged value
+        if (s2?.streamId && merged && Number.isFinite(merged.maxViewers)) {
+          // atomic "only if higher" update
+          sbUpdateMaxViewers(s2.streamId, merged.maxViewers).catch(()=>{});
+        }
       }
     };
+
 
     // kick and schedule; each cycle will *block until viewers are seen* (or optional cap) then close the tiny page
     await pollMeta();
@@ -809,7 +937,8 @@ app.get('/events/:id', (req, res) => {
 
   slog(req.params.id, `SSE open; sinks before=${s.sinks.size}`);
   res.write(`data: ${JSON.stringify({ type:'Connection Established', id:req.params.id, videoId: s.videoId })}\n\n`);
-  if (s.meta && (s.meta.title || s.meta.viewers !== undefined)) {
+
+  if (s.meta && (s.meta.title || s.meta.viewers !== undefined || s.meta.maxViewers !== undefined)) {
     res.write(`data: ${JSON.stringify({ type:'meta', at: Date.now(), videoId: s.videoId, ...s.meta })}\n\n`);
   }
 

@@ -9,7 +9,9 @@
     "playwright:install": "npx playwright install --with-deps chromium"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.57.2",
     "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
     "express": "^4.19.2",
     "nanoid": "^5.0.7",
     "playwright": "^1.46.0"

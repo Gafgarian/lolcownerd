@@ -6,7 +6,7 @@ export const DUEL_ARC_PX       = 320;
 export const DUEL_CLEAR_GAP_PX = 155;
 export const EDGE_MARGIN       = { normal: 0.60, duel: 0.52 };
 
-export const CAR_ACROSS = 56 * 1.3;     // world units
+export const CAR_ACROSS = 50;     // world units
 export const LANE_World = 34;
 
 export const TEAMS = [

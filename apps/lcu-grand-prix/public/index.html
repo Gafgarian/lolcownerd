@@ -1,20 +1,62 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
+  <meta charset="utf-8" />
   <title>LCU Grand Prix – Viewer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <link rel="stylesheet" href="./styles.css"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="hud">
-    <div class="hud-left"></div>
+  <!-- Top HUD (no Car/Boost controls here) -->
+  <div class="hud" id="hud">
+    <div class="brand">LCU Grand Prix</div>
     <div class="hud-spacer"></div>
-    <div class="hud-right"></div>
-  </header>
+    <div class="hud-right">
+      <div class="stats" id="viewerStat">Viewers: <span id="viewerCount">--</span></div>
+      <button id="togglePanel" class="icon-btn" title="Open Panel" aria-expanded="false">☰</button>
+    </div>
+  </div>
 
-  <canvas id="racerCanvas"></canvas>
+  <div class="stage">
+    <canvas id="racerCanvas"></canvas>
+  </div>
 
-  <script src="./js/viewer.js" type="module"></script>
+  <!-- Slide-over panel (copied from your original) -->
+  <aside class="side-panel" id="sidePanel" aria-hidden="true">
+    <div class="side-head">
+      <div class="side-title">Race Panel</div>
+      <a class="ghost-btn" href="garages.html" title="Back to Garages">Garages</a>
+    </div>
+    <div class="side-scroll">
+      <section>
+        <div class="lb-title">Leaderboard</div>
+        <ul id="leaderboardList" class="lb-list"></ul>
+      </section>
+    </div>
+  </aside>
+
+  <!-- Car modal (unchanged from your original) -->
+  <div id="carModal" class="modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="carModalTitle">
+      <button class="modal-close" title="Close" data-close>✕</button>
+      <div class="modal-body">
+        <div class="modal-images">
+          <img id="modalSideImg" alt="Car side view" />
+          <img id="modalTopImg" alt="Car overhead view" />
+        </div>
+        <div class="modal-info">
+          <h2 id="carModalTitle"></h2>
+          <div class="stat-line"><span>Position</span><strong id="modalPos">—</strong></div>
+          <div class="stat-line"><span>Lap</span><strong id="modalLap">—</strong></div>
+          <div class="stat-line"><span>Speed</span><strong id="modalSpd">—</strong></div>
+          <div class="stat-title">Car Stats</div>
+          <div id="modalStatGrid" class="stat-grid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/viewer.js"></script>
 </body>
 </html>

@@ -10,6 +10,9 @@ const feed    = document.getElementById('feed');
 const totalSCEl    = document.getElementById('totalSC');
 const totalGiftsEl = document.getElementById('totalGifts');
 
+const totalMembersEl = document.getElementById('totalMembers');
+const maxViewersEl   = document.getElementById('maxViewers');
+
 const metaTitleEl   = document.getElementById('metaTitle');
 const metaViewersEl = document.getElementById('metaViewers');
 
@@ -26,6 +29,9 @@ const cRed    = document.getElementById('cRed');
 let es = null, sessionId = null;
 let totalSC = 0;
 let totalGifts = 0;
+let totalMembers = 0;
+let maxViewers = 0;
+
 const tierCounters = { blue:0, lblue:0, green:0, yellow:0, orange:0, pink:0, red:0 };
 let lastMeta = { title: undefined, viewers: undefined }; // <-- track last shown
 
@@ -92,6 +98,10 @@ function pickTextColor(bg){
 function updateTotals(){
   totalSCEl.textContent    = currencyFormat(totalSC);
   totalGiftsEl.textContent = String(totalGifts);
+
+  if (totalMembersEl) totalMembersEl.textContent = String(totalMembers);
+  if (maxViewersEl)   maxViewersEl.textContent   = (maxViewers || '—');
+
   cBlue.textContent   = tierCounters.blue;
   cLBlue.textContent  = tierCounters.lblue;
   cGreen.textContent  = tierCounters.green;
@@ -101,11 +111,17 @@ function updateTotals(){
   cRed.textContent    = tierCounters.red;
 }
 function resetAll(){
-  totalSC = 0; totalGifts = 0;
+  totalSC = 0; 
+  totalGifts = 0;
+  totalMembers = 0;
+  maxViewers = 0;
+
   Object.keys(tierCounters).forEach(k => tierCounters[k]=0);
   lastMeta = { title: undefined, viewers: undefined };       // <-- reset
   if (metaTitleEl)   metaTitleEl.textContent   = '—';
   if (metaViewersEl) metaViewersEl.textContent = '—';
+  if (maxViewersEl)  maxViewersEl.textContent  = '—';
+  if (totalMembersEl) totalMembersEl.textContent = '0';
   updateTotals();
   feed.innerHTML = '';
 }
@@ -202,6 +218,10 @@ async function start(){
           if (val !== metaViewersEl.textContent) {
             metaViewersEl.textContent = val;
             lastMeta.viewers = n;
+            if (Number.isFinite(n) && n > maxViewers) {
+              maxViewers = n;
+              if (maxViewersEl) maxViewersEl.textContent = n.toLocaleString();
+            }
           }
         }
         return;
@@ -252,6 +272,8 @@ async function start(){
       }
 
       if (d.type === 'membership') {
+        totalMembers += 1;             
+        updateTotals();
         row(
           `<div class="row" style="padding:8px 12px; line-height:1.25">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">

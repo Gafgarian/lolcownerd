@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Chatris Overlay</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="overlay">
+    <!-- Left sidebar with cards -->
+    <aside id="sidebar">
+      <div class="card score">
+        <div class="card-title">Score</div>
+        <div class="score-row">
+          <div class="score-item">
+            <div class="k">Current</div>
+            <div id="score" class="v big">0</div>
+          </div>
+          <div class="score-item">
+            <div class="k">High</div>
+            <div id="high" class="v big">0</div>
+          </div>
+        </div>
+        <div class="meta">
+          <span id="speed">Speed: x1.00</span>
+          <span id="viewers">Viewers: 0</span>
+        </div>
+      </div>
+
+      <div class="card next">
+        <div class="card-title">Next</div>
+        <canvas id="next" width="160" height="160"></canvas>
+      </div>
+
+      <div id="toast"></div>
+    </aside>
+
+    <!-- Main board -->
+    <main id="stage">
+      <canvas id="board" width="320" height="1280"></canvas>
+    </main>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

@@ -63,9 +63,24 @@ export function createCars(teams, totalLen){
 }
 
 export function applyCoeffs(cars, statsById){
-  for(const c of cars){
-    const st = statsById?.[c.team.id] || { spd:5, acc:5, han:5, pit:5, end:5, rsk:5 };
+  const norm = (row = {}) => ({
+    spd: num(row.spd, row.SPD, 5),
+    acc: num(row.acc, row.ACC, 5),
+    han: num(row.han, row.HAN, 5),
+    pit: num(row.pit, row.PIT, 5),
+    end: num(row.end, row.END, 5),
+    rsk: num(row.rsk, row.RSK, 5),
+  });
+  function num(lo, hi, def){
+    const v = lo ?? hi;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : def;
+  }
+
+  for (const c of cars){
+    const raw = statsById?.[c.team.id] || {};
+    const st  = norm(raw);
     c.stats = st;
-    c.cfg = buildCoefficients(st);
+    c.cfg   = buildCoefficients(st);
   }
 }

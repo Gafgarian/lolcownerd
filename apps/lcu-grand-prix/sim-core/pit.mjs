@@ -1,5 +1,3 @@
-import { STRAIGHT_THRESH } from './config.mjs';
-
 export function buildPit(geom){
   const { centerline, straightRange, LANE_W, HALF_W_STRAIGHT } = geom;
 
@@ -45,21 +43,29 @@ export function buildPit(geom){
     const score = p.y - Math.abs(j - midJ)*4;
     if (score > best.score) best = { j, score };
   }
-  const startLineIndex = pitIds[Math.floor((pitEntryIdx + pitExitIdx)/2)];
+  const startLineIndex = pitIds[best.j];
   const startLineS     = centerline[startLineIndex].s;
 
   // stalls
   const stalls = [];
   const usable = pitExitIdx - pitEntryIdx + 1;
-  const count  = 12;
-  const step   = Math.max(1, Math.floor(usable/(count+1)));
-  for(let k=1;k<=count;k++){
-    const j = pitEntryIdx + k*step;
-    const idx = pitIds[Math.min(j, pitIds[pitExitIdx])];
+  const count  = geom.teamsCount ?? 12;
+
+  for (let k = 1; k <= count; k++) {
+    const t   = k / (count + 1);                                // 0..1
+    const j   = pitEntryIdx + Math.round(t * (usable - 1));     // spread evenly
+    const idx = pitIds[j];
+
     const p   = centerline[idx];
     const nx  = -Math.sin(p.theta), ny = Math.cos(p.theta);
-    const sep = HALF_W_STRAIGHT - LANE_W*0.75;
+    const sep = HALF_W_STRAIGHT - LANE_W * 0.75;                // lane center toward inside
     stalls.push({ idx, x: p.x + nx*sep, y: p.y + ny*sep, theta: p.theta, occupied:false });
+  }
+
+  for (const [i, s] of stalls.entries()) {
+    if (![s.x, s.y, s.theta].every(Number.isFinite)) {
+      console.warn('[pit] bad stall', i, s);
+    }
   }
 
   function pitLaneTargetLateral(i){

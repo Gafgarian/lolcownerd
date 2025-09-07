@@ -1,0 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+html, body {
+  margin: 0;
+  background: radial-gradient(1200px 800px at 70% -20%, #0a0f16 0%, #07090d 60%);
+  color: #e7eefb;
+  font-family: "Press Start 2P", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  letter-spacing: 0.3px;
+}
+
+#overlay {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 24px;
+  padding: 18px;
+}
+
+.card {
+  background: linear-gradient(180deg, #0d1320, #0f1626);
+  border: 2px solid #2d3a57;
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(0,0,0,.45), inset 0 2px 0 rgba(255,255,255,.04);
+  padding: 14px;
+  margin-bottom: 18px;
+}
+
+.card-title {
+  font-size: 12px;
+  opacity: .9;
+  margin-bottom: 8px;
+}
+
+#board, #next {
+  image-rendering: pixelated;
+  background: linear-gradient(180deg, #0e1420, #0f1a2a);
+  border-radius: 10px;
+  border: 2px solid #2d3a57;
+  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+}
+
+/* tiny scanline overlay for nostalgia */
+#stage::after {
+  content:"";
+  position:absolute; inset:0;
+  pointer-events:none;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,0.03),
+      rgba(255,255,255,0.03) 2px,
+      transparent 2px,
+      transparent 4px
+    );
+}

@@ -1,30 +1,43 @@
 :root{
-  /* Light charcoal page background */
-  --page:#2c2e33;
-  --text:#eef0f4;
-  --muted:#a6abb3;
-  --panel:#1e2028cc;         /* translucent overlay */
-  --panel-border:#3c4155cc;
+  --page:#2c2e33; --text:#eef0f4; --muted:#a6abb3;
+  --panel:#1e2028cc; --panel-border:#3c4155cc;
   --accent:#7c4dff;
-  --sideW: 360px;
+  /* narrower on small screens, wider on desktop */
+  --sideW: clamp(340px, 36vw, 480px);
+  --hudH: 56px;
 }
 
-*{box-sizing:border-box}
+*{ box-sizing:border-box }
 html,body{
-  height:100%;margin:0;background:var(--page);color:var(--text);
-  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif
+  height:100%;
+  margin:0;
+  background:var(--page);
+  color:var(--text);
+  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
 }
 
 /* ---------- HUD ---------- */
-.hud{display:flex;align-items:center;gap:16px;padding:12px 16px;border-bottom:1px solid #2a2d37;background:#242730}
+.hud{
+  height: var(--hudH);
+  display:flex;align-items:center;gap:16px;
+  padding:0 16px;            /* zero vertical padding so height is stable */
+  border-bottom:1px solid #2a2d37;background:#242730
+}
 .brand{font-weight:800;letter-spacing:.5px}
 .hud-spacer{flex:1}
 .hud-right{display:flex;align-items:center;gap:10px}
 .stats{color:var(--muted)}
+
 .icon-btn,.ghost-btn{
-  font:inherit;color:var(--text);background:#2a2d37;border:1px solid #34384a;border-radius:8px;padding:8px 10px;cursor:pointer;text-decoration:none
+  font:inherit;color:var(--text);
+  background:#2a2d37;border:1px solid #34384a;border-radius:8px;
+  padding:8px 10px;cursor:pointer;text-decoration:none
 }
 .icon-btn:hover,.ghost-btn:hover{border-color:var(--accent)}
+.icon-btn.admin-fab[aria-expanded="true"]{      /* show as "pressed" when panel open */
+  outline:2px solid #7c4dff; box-shadow:0 0 0 2px #7c4dff55 inset;
+}
+
 /* ----- Header race controls ----- */
 .race-controls{display:flex;align-items:center;gap:10px;justify-content:center;flex:1}
 .start-btn{
@@ -45,61 +58,168 @@ html,body{
 .pause-btn:hover{border-color:#7c4dff}
 
 /* ---------- Stage / Canvas ---------- */
-.stage{display:grid;place-items:center;height:calc(100vh - 64px);padding:8px}
+.stage{display:grid;place-items:center;height:calc(100vh - var(--hudH));padding:8px}
 #racerCanvas{
-  display:block;width:100%;height:100%;border-radius:14px;background:#0d0f14;
+  display:block;width:100%;height:100%;
+  border-radius:14px;background:#0d0f14;
   box-shadow:0 2px 20px rgba(0,0,0,.35)
 }
 
-/* ---------- Slide-out Panel (translucent overlay) ---------- */
+/* =========================================
+   Viewer SIDE PANEL (unchanged behaviour)
+   ========================================= */
 .side-panel{
-  position:fixed;top:64px;right:0;height:calc(100vh - 64px);width:var(--sideW);
-  background:var(--panel);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  position:fixed; 
+  top: var(--hudH);
+  right:0;
+  height: calc(100vh - var(--hudH));
+  width:var(--sideW);
+  background:var(--panel);
+  backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
   border-left:1px solid var(--panel-border);
-  transform:translateX(100%);transition:transform .25s ease;z-index:20;
-  will-change:transform;
-  display:flex;flex-direction:column;border-top-left-radius:12px;
+  transform:translateX(100%);
+  transition:transform .25s ease;
+  z-index:20; will-change:transform;
+  display:flex; flex-direction:column;
+  border-top-left-radius:12px;
 }
-body.panel-open .side-panel{transform:none}
-.side-head{display:flex;align-items:center;gap:8px;padding:12px;border-bottom:1px solid var(--panel-border);background:#24273099;position:sticky;top:0;z-index:1;border-top-left-radius:12px}
-.side-title{font-weight:800}
-.side-head .ghost-btn{margin-left:auto}
-.side-scroll{overflow:auto;padding:12px;display:grid;gap:14px}
+body.panel-open .side-panel{ transform:none; }
 
-/* Leaderboard */
+.side-head{
+  display:flex; 
+  top: 0;
+  align-items:center; gap:8px;
+  padding:12px; border-bottom:1px solid var(--panel-border);
+  background:#24273099; position:sticky; top:0; z-index:1;
+  border-top-left-radius:12px;
+}
+.side-title{ font-weight:800; margin-right:auto; }
+.side-scroll{
+  height:100%;
+  overflow:auto; scrollbar-gutter:stable;
+  padding:12px 14px 16px;
+  display:flex; flex-direction:column; gap:14px;
+}
+
+/* ---------- Admin – Slide-out Drawer (right) ---------- */
+.admin-fab{
+  position:fixed;top:10px;right:12px;z-index:1000;
+  padding:8px 12px;border-radius:10px;
+  border:1px solid rgba(255,255,255,.12);
+  background:rgba(20,22,26,.92);color:#fff;font-weight:700;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
+}
+/* When panel is open, show Admin button as "pressed" */
+.admin-fab[aria-expanded="true"]{
+  background:#2a2d37; border-color:var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.admin-fab:hover{filter:brightness(1.06)}
+
+.admin-panel{
+  position:fixed;top:0;right:0;height:100%;
+  width:min(380px,92vw);
+  transform:translateX(100%);
+  transition:transform .28s ease, opacity .28s ease;
+  background:rgba(22,24,29,.96);
+  border-left:1px solid rgba(255,255,255,.06);
+  box-shadow:-28px 0 48px rgba(0,0,0,.35);
+  z-index:999;opacity:.999;overflow:hidden;display:flex;flex-direction:column;
+}
+body.panel-open .admin-panel{ transform: translateX(0); }
+.admin-panel-inner{ padding:16px; overflow:auto; height:100%; }
+.admin-h{ margin:6px 0 8px; font-size:14px; opacity:.9; }
+.admin-sep{ border:0; border-top:1px solid rgba(255,255,255,.08); margin:14px 0; }
+
+/* Admin lineup list (drag sortable) */
+.lineup{ list-style:none; margin:0 0 10px; padding:0; }
+.lineup li{
+  padding:8px 10px;margin:6px 0;border-radius:10px;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);
+  cursor:grab;user-select:none;
+}
+.lineup li.dragging{ opacity:.7; transform:translateX(-2px); }
+
+/* Parser controls */
+.parser-row{ display:flex; gap:8px; align-items:center; margin:6px 0; }
+#parserUrl{
+  flex:1; min-width:0; padding:8px 10px; color:#fff;
+  border-radius:8px; border:1px solid rgba(255,255,255,.12);
+  background:rgba(0,0,0,.25);
+}
+.admin-log{
+  height:160px; padding:10px; margin-top:8px;
+  background:rgba(0,0,0,.25);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:8px; overflow:auto;
+}
+
+/* Small button utility */
+.btn{ padding:8px 12px; border-radius:8px; background:#2c2f36; color:#fff; border:1px solid #444; }
+.btn:hover{ filter:brightness(1.06); }
+.btn.primary{ background:#2b6ef5; border-color:#2b6ef5; }
+.btn.block{ width:100%; }
+
+/* ---------- Admin grid (legacy support – keep) ---------- */
+.grid-list{ list-style:none; padding:0; margin:8px 0 12px; }
+.grid-list li{
+  padding:8px 10px;margin:6px 0;background:rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.12);border-radius:8px;cursor:grab;user-select:none
+}
+.grid-list li.dragging{opacity:.6}
+
+.row{ display:flex; gap:8px; align-items:center; }
+.log{ background:#0f1116; border:1px solid #222; padding:8px; border-radius:8px; height:160px; overflow:auto; }
+.hint{ color:var(--muted); font-size:.9rem; margin-top:4px; }
+.btn.primary:disabled{ opacity:.55; cursor:not-allowed; }
+
+/* ---------- Leaderboard ---------- */
 .lb-title{font-weight:700;color:var(--muted);margin:0 0 6px}
-.lb-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.lb-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+/* Hide time col for now; spread columns. */
 .lb-item{
-  display:flex;align-items:center;gap:10px;background:#151724cc;border:1px solid #2d3040cc;
-  border-radius:10px;padding:8px 10px;cursor:pointer
+  display:grid;
+  grid-template-columns: 28px 44px 1fr 78px;  /* P | Lap | Team | Car img */
+  align-items:center; gap:10px;
+  background:#151724cc;border:1px solid #2d3040cc;border-radius:10px;padding:8px 10px
 }
+.lb-pos{ width:28px; text-align:center; color:#9aa0a6; }
+.lb-team{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}
+.lb-show{ font-weight:700; text-align:left; margin-right:auto; }
+.lb-car{width:72px;height:auto;object-fit:contain;justify-self:end;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
+.lb-lap{width:44px;text-align:center;color:#cfd3da}
+.lb-time{ display:none !important; } /* if any legacy nodes still exist */
 .lb-item:hover{border-color:var(--accent)}
-.lb-pos{width:22px;text-align:center;color:#9aa0a6}
-.lb-car{width:72px;height:auto;object-fit:contain;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
-.lb-show{font-weight:700;margin-left:2px;margin-right:auto}
 .lb-name{color:#9aa0a6;font-size:12px}
+.lb-item .lb-time{display:none}
 
-/* Controls */
-.panel-group{display:grid;gap:8px;background:#141722cc;border:1px solid #2d3040cc;border-radius:10px;padding:10px}
+
+/* ---------- Controls block ---------- */
+.panel-group{
+  display:grid;gap:8px;background:#141722cc;border:1px solid #2d3040cc;border-radius:10px;padding:10px
+}
 .panel-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 label,select,button{font:inherit;color:var(--text)}
-select,button{background:#2a2d37;border:1px solid #34384a;border-radius:8px;padding:8px 10px}
+select,button{
+  background:#2a2d37;border:1px solid #34384a;border-radius:8px;padding:8px 10px
+}
 button:hover,select:hover{border-color:var(--accent)}
-.hint{color:var(--muted);font-size:12px}
 
 /* ---------- Modal ---------- */
 .modal{position:fixed;inset:0;display:none;z-index:40}
 .modal.show{display:block}
 .modal-backdrop{
   position:absolute;inset:0;background:rgba(0,0,0,.55);
-  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); /* soften canvas behind */
+  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
 }
 .modal-dialog{
   position:relative;max-width:920px;margin:6vh auto;
-  background:var(--panel); /* translucent like race panel */
+  background:var(--panel);
   backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
   border:1px solid var(--panel-border);
-  border-radius:12px;box-shadow:0 30px 80px rgba(0,0,0,.5)
+  border-radius:12px;box-shadow:0 30px 80px rgba(0,0,0,.5);
+  transform: scale(.9);                 /* ~90% so it doesn’t over-zoom */
+  transform-origin: top center;
 }
 .modal-close{
   position:absolute;right:10px;top:10px;border:1px solid #34384a;background:#2a2d37;color:var(--text);
@@ -107,15 +227,15 @@ button:hover,select:hover{border-color:var(--accent)}
 }
 .modal-close:hover{border-color:var(--accent)}
 .modal-body{
-  display:flex;gap:18px;align-items:flex-start;padding:18px;flex-wrap:wrap
+  display:flex;gap:16px;align-items:flex-start;padding:16px;flex-wrap:wrap
 }
 .modal-images{display:grid;gap:12px}
 .modal-images #modalSideImg{
-  width:520px;max-width:70vw;height:auto;object-fit:contain;background:#14161c99;
+  width:468px;max-width:70vw;height:auto;object-fit:contain;background:#14161c99;
   border-radius:10px;border:1px solid #2a2d37
 }
 .modal-images #modalTopImg{
-  width:380px;max-width:50vw;height:auto;object-fit:contain;background:#14161c99;
+  width:342px;max-width:50vw;height:auto;object-fit:contain;background:#14161c99;
   border-radius:10px;border:1px solid #2a2d37;justify-self:center
 }
 .modal-info{display:grid;gap:10px;min-width:260px;flex:1}
@@ -125,55 +245,44 @@ button:hover,select:hover{border-color:var(--accent)}
   border:1px solid #2d3040;border-radius:8px;padding:8px 10px
 }
 .stat-line span{color:#a6abb3}
-/* Use tabular numbers so timers don't shift width */
-.stat-line strong,.stat-chip .v{
-  font-variant-numeric: tabular-nums lining-nums;
-}
+/* Numbers don’t shift while ticking */
+.stat-line strong,.stat-chip .v{ font-variant-numeric: tabular-nums lining-nums; }
 
-/* Modal – small grid for the car’s base stats (from cars.json) */
-.stat-title{
-  margin-top: 10px;
-  font-weight: 600;
-  color: #dbe2f1;
-  opacity: .9;
-}
+/* Records/Stats */
+.stat-title{ margin-top:10px; font-weight:600; color:#dbe2f1; opacity:.9; }
 .stat-grid{
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0,1fr));
-  gap: 6px;
-  margin-top: 6px;
+  display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:6px; margin-top:6px;
 }
 .stat-chip{
-  background: #1f232acc;
-  border: 1px solid #2a2f38;
-  border-radius: 8px;
-  padding: 6px 8px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 12px;
-  color: #cfd6e6;
+  background:#1f232acc;border:1px solid #2a2f38;border-radius:8px;
+  padding:6px 8px;display:flex;align-items:center;justify-content:space-between;
+  font-size:12px;color:#cfd6e6;
 }
 .stat-chip .k{opacity:.7;margin-right:6px;}
 .stat-chip .v{font-weight:700;color:#fff}
 
-/* ---------- Responsive tweaks ---------- */
+#carModal .stat-line{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;background:rgba(255,255,255,.04);border-radius:8px;margin-top:6px}
+#carModal .modal-body { padding: 18px 20px; }
+#carModal .stat-title{opacity:.9;margin:12px 0 4px; padding: 8px 10px;}
+
+/* ---------- Podium ---------- */
+.podium-wrap{
+  display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;align-items:end;margin:12px 0 8px
+}
+.place{display:flex;flex-direction:column;align-items:center;justify-content:flex-end}
+.place.first  { transform:translateY(-10px) }
+.place.second { transform:translateY( 0px) }
+.place.third  { transform:translateY( 6px) }
+.place img{max-height:64px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,.4))}
+.place .label{margin-top:6px;font-weight:600}
+
+/* ---------- Responsive ---------- */
 @media (max-width: 980px){
   .modal-dialog{margin:4vh 12px}
   .modal-images #modalSideImg{width:min(460px,70vw)}
   .modal-images #modalTopImg{width:min(320px,50vw)}
 }
 @media (prefers-reduced-motion: reduce){
-  .side-panel,.modal-dialog{transition:none}
+  .side-panel,.modal-dialog,.admin-panel{transition:none}
 }
-
-* { box-sizing: border-box; }
-html, body { height: 100%; margin: 0; background:#111; color:#fff; font: 14px/1.4 Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-.hud { display:flex; align-items:center; gap:12px; padding:10px 12px; border-bottom:1px solid #222; background:#0c0d10; position:sticky; top:0; z-index:10; }
-.hud-left, .hud-right { display:flex; align-items:center; gap:8px; }
-.hud-spacer { flex: 1; }
-
-.icon-btn { appearance:none; border:1px solid #2b2f35; background:#171a1f; color:#e8ecf2; padding:8px 12px; border-radius:8px; cursor:pointer; }
-.icon-btn:hover { background:#1f232a; }
-
-#racerCanvas { display:block; width:100%; height: calc(100vh - 54px); background:#20351b; }
