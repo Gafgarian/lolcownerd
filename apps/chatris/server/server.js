@@ -41,13 +41,26 @@ function startCountdown(ms = 3000) {
 
 // choose parser origin
 function pickParserEnv() {
-  const isLocal = process.env.NODE_ENV !== 'production';
-  const baseUrl = isLocal ? process.env.PARSER_URL : 'http://localhost:8080';
-  const token   = isLocal ? process.env.PARSER_TOKEN : '';
+  // Prefer a single PARSER_URL everywhere
+  const baseUrl =
+    (process.env.PARSER_URL && process.env.PARSER_URL.trim()) ||
+    (process.env.NODE_ENV === 'production'
+      ? (process.env.PARSER_URL_PROD && process.env.PARSER_URL_PROD.trim())
+      : (process.env.PARSER_URL_LOCAL && process.env.PARSER_URL_LOCAL.trim())) ||
+    // last-ditch local fallback only if nothing else is set
+    'http://localhost:8080';
 
-  if (!baseUrl) {
-    throw new Error('Parser base URL is not set. Provide PARSER_URL_LOCAL (dev) or PARSER_URL_PROD (prod).');
+  const token =
+    (process.env.PARSER_TOKEN && process.env.PARSER_TOKEN.trim()) ||
+    (process.env.NODE_ENV === 'production'
+      ? (process.env.PARSER_TOKEN_PROD && process.env.PARSER_TOKEN_PROD.trim())
+      : (process.env.PARSER_TOKEN_LOCAL && process.env.PARSER_TOKEN_LOCAL.trim())) ||
+    '';
+
+  if (!/^https?:\/\//i.test(baseUrl)) {
+    throw new Error('PARSER_URL must include http(s)://');
   }
+
   return { baseUrl, token };
 }
 
