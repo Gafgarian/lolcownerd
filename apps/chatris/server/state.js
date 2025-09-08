@@ -1,216 +1,200 @@
-// server/state.js
-import { BOARD_W, BOARD_H } from './rules.js';
+import {
+  BOARD_W, BOARD_H, FLOOR_ROWS, parseCommand, CHAT_COOLDOWN_MS, donationEffectFrom
+} from './rules.js';
 
-// 7 piece shapes, 0=empty; values 1..7 double as color ids.
+// If you keep SHAPES here:
 const SHAPES = [
-  // 0: I
   [[1,1,1,1]],
-  // 1: O
   [[2,2],[2,2]],
-  // 2: T
   [[0,3,0],[3,3,3]],
-  // 3: S
   [[0,4,4],[4,4,0]],
-  // 4: Z
   [[5,5,0],[0,5,5]],
-  // 5: J
   [[6,0,0],[6,6,6]],
-  // 6: L
   [[0,0,7],[7,7,7]],
 ];
 
-function rotCW(mat){
-  const h = mat.length, w = mat[0].length;
-  const out = Array.from({length: w}, () => Array(h).fill(0));
-  for (let y=0; y<h; y++) for (let x=0; x<w; x++) out[x][h-1-y] = mat[y][x];
-  return out;
-}
-function shapeOf(id, r){
-  let s = SHAPES[id];
-  for (let i=0; i<(r%4); i++) s = rotCW(s);
-  return s;
-}
+function rotCW(m){ const h=m.length,w=m[0].length,o=Array.from({length:w},()=>Array(h).fill(0));
+  for (let y=0;y<h;y++) for (let x=0;x<w;x++) o[x][h-1-y]=m[y][x]; return o; }
+function shapeOf(id,r=0){ let s=SHAPES[id]; for(let i=0;i<(r%4);i++) s=rotCW(s); return s; }
 
 export class GameState {
-  constructor(){ this.resetAll(); }
-
-  resetAll(){
-    this.board = Array.from({length: BOARD_H}, () => Array(BOARD_W).fill(0));
-    this.score = 0;            // lines cleared (your spec)
+  constructor() {
+    this.board = Array.from({ length: BOARD_H }, () => Array(BOARD_W).fill(0));
+    this.floorRows = FLOOR_ROWS;         
+    this.score = 0;
     this.highScore = 0;
-    this.nextQueue = this.seedBag();
-    this.current = null;
-    this.sinceId = 0;
     this.emaViewers = 0;
     this.giftsRecent = 0;
-    this.hudToast = null;
+    this.nextQueue = [];
+    this.current = null; 
+    this.running = false;
+    this.sinceId = 0;     
+    this.sinceViewerId = 0;
     this._gravAccMs = 0;
-    this.running = false;
   }
 
-  start(){
-    this.resetAll();
-    this.running = true;
-    this.current = this.spawn();
-  }
-  end(){
-    this.running = false;
-    this.highScore = Math.max(this.highScore, this.score);
-  }
-  clearBoard(keepScore=true){
-    this.board = Array.from({length: BOARD_H}, () => Array(BOARD_W).fill(0));
-    if (!keepScore) this.score = 0;
-  }
+  // --- lifecycle ------------------------------------------------------------
+  start(){ this.clearBoard(false); this.running = true; if (!this.nextQueue.length) this._refillBag(); this.spawn(); }
+  end(){ this.running = false; this.highScore = Math.max(this.highScore, this.score); }
+  clearBoard(keepScore=false){ this.board = Array.from({ length: BOARD_H }, () => Array(BOARD_W).fill(0)); if(!keepScore) this.score=0; this.current=null; }
+  resetAll(){ this.clearBoard(false); this.highScore=0; this.nextQueue=[]; this.current=null; }
 
-  seedBag(){ return this.rollBag().concat(this.rollBag()); }
-  rollBag(){
-    const bag = [0,1,2,3,4,5,6];
-    for (let i=bag.length-1; i>0; i--){ const j = Math.floor(Math.random()*(i+1)); [bag[i],bag[j]]=[bag[j],bag[i]]; }
-    return bag;
+  // --- piece queue / spawn --------------------------------------------------
+  _refillBag() {
+    const bag=[0,1,2,3,4,5,6]; // 0..6 piece IDs
+    for (let i=bag.length-1;i>0;i--){ const j=(Math.random()* (i+1))|0; [bag[i],bag[j]]=[bag[j],bag[i]]; }
+    this.nextQueue.push(...bag);
   }
-  ensureQueue(){ if (this.nextQueue.length < 7) this.nextQueue.push(...this.rollBag()); }
-
-  spawn(){
-    this.ensureQueue();
+  spawn() {
+    if (!this.nextQueue.length) this._refillBag();
     const id = this.nextQueue.shift();
-    const piece = { id, x: Math.floor(BOARD_W/2)-2, y: 0, r: 0 };
-    // game over if cannot place
-    if (!this.canPlace(piece)) { this.end(); }
-    return piece;
+    const s  = shapeOf(id, 0);
+    const w  = s[0].length;
+    const x0 = Math.floor((BOARD_W - w) / 2);
+    this.current = { id, x:x0, y:0, r:0 };
   }
 
-  canPlace(piece){
-    const s = shapeOf(piece.id, piece.r);
-    for (let y=0; y<s.length; y++){
-      for (let x=0; x<s[0].length; x++){
-        const v = s[y][x];
-        if (!v) continue;
-        const bx = piece.x + x;
-        const by = piece.y + y;
-        if (bx < 0 || bx >= BOARD_W || by < 0 || by >= BOARD_H) return false;
-        if (this.board[by][bx]) return false;
+  // --- collision, locking, lines -------------------------------------------
+  collides(id, x, y, r){
+    const s = shapeOf(id, r);
+    for (let dy=0; dy<s.length; dy++){
+      for (let dx=0; dx<s[0].length; dx++){
+        if (!s[dy][dx]) continue;
+        const gx = x+dx, gy = y+dy;
+        if (gx < 0 || gx >= BOARD_W) return true;                      
+        if (gy >= BOARD_H - this.floorRows) return true;              
+        if (gy >= 0 && this.board[gy][gx]) return true;               
       }
     }
-    return true;
+    return false;
   }
 
-  mergeCurrent(){
-    const s = shapeOf(this.current.id, this.current.r);
-    for (let y=0; y<s.length; y++){
-      for (let x=0; x<s[0].length; x++){
-        const v = s[y][x];
-        if (!v) continue;
-        const bx = this.current.x + x;
-        const by = this.current.y + y;
-        if (by >= 0 && by < BOARD_H && bx >= 0 && bx < BOARD_W) {
-          this.board[by][bx] = v;
+  lockCurrent(){
+    if (!this.current) return;
+    const { id, x, y, r } = this.current, s = shapeOf(id, r);
+    for (let dy=0; dy<s.length; dy++)
+      for (let dx=0; dx<s[0].length; dx++)
+        if (s[dy][dx]) {
+          const gx=x+dx, gy=y+dy;
+          if (gy>=0 && gy<BOARD_H && gx>=0 && gx<BOARD_W) this.board[gy][gx]=s[dy][dx];
         }
-      }
-    }
+    this.current=null;
+    this.clearLines();
   }
 
-  moveLeft(){
-    if (!this.running || !this.current) return;
-    const p = { ...this.current, x: this.current.x - 1 };
-    if (this.canPlace(p)) this.current = p;
-  }
-  moveRight(){
-    if (!this.running || !this.current) return;
-    const p = { ...this.current, x: this.current.x + 1 };
-    if (this.canPlace(p)) this.current = p;
-  }
-  rotate(){
-    if (!this.running || !this.current) return;
-    const r = (this.current.r + 1) % 4;
-    // simple kick attempts on X
-    const kicks = [0, -1, 1, -2, 2];
-    for (const k of kicks){
-      const p = { ...this.current, r, x: this.current.x + k };
-      if (this.canPlace(p)) { this.current = p; return; }
-    }
-  }
-
-  tick(dtMs, gravityMs) {
-    if (!this.running || !this.current) return;
-    this._gravAccMs = (this._gravAccMs || 0) + dtMs;
-    while (this._gravAccMs >= gravityMs) {
-      this._gravAccMs -= gravityMs;
-      this.stepDown();
-    }
-  }
-
-  stepDown(){
-    const p = { ...this.current, y: this.current.y + 1 };
-    if (this.canPlace(p)) {
-      this.current = p;
-    } else {
-      // lock piece
-      this.mergeCurrent();
-      // clear lines (natural -> add to score)
-      const cleared = this.clearFullRows();
-      if (cleared > 0) this.score += cleared;
-      // next piece
-      this.current = this.spawn();
-    }
-  }
-
-  clearFullRows(){
-    let removed = 0;
-    for (let y = BOARD_H - 1; y >= 0; y--){
-      if (this.board[y].every(v => v !== 0)) {
+  clearLines(){
+    const bottomPlayable = BOARD_H - this.floorRows - 1;
+    for (let y = bottomPlayable; y >= 0; ){
+      if (this.board[y].every(Boolean)) {
         this.board.splice(y,1);
         this.board.unshift(Array(BOARD_W).fill(0));
-        removed++;
-        y++; // re-check this index after unshift
-      }
+        this.score += 1;
+      } else y--;
     }
-    return removed;
   }
 
-  // Donation effects (match your spec)
-  applyEffect(effect){
+  // --- step / gravity -------------------------------------------------------
+  stepDown(){
+    if (!this.current) return;
+    const { id,x,y,r } = this.current;
+    if (this.collides(id, x, y+1, r)) { this.lockCurrent(); this.spawn(); return true; }
+    this.current.y++; return false;
+  }
+
+  pausedUntil = 0;
+
+  pauseFor(ms){
+    this.pausedUntil = Date.now() + ms;
+    // optional: clear falling piece so the first spawn happens after countdown
+    this.current = null;
+    this._acc = 0;
+  }  
+
+  tick(dt, gravityMs=1000){
+    if (!this.running) return;
+    this._gravAccMs += dt;
+    while (this._gravAccMs >= gravityMs){ this._gravAccMs -= gravityMs; this.stepDown(); }
+  }
+
+  // --- controls -------------------------------------------------------------
+  moveLeft(){ if (this.current && !this.collides(this.current.id, this.current.x-1, this.current.y, this.current.r)) this.current.x--; }
+  moveRight(){ if (this.current && !this.collides(this.current.id, this.current.x+1, this.current.y, this.current.r)) this.current.x++; }
+  rotate(){
+    if (!this.current) return;
+    const nr = (this.current.r + 1) % 4;
+    if (!this.collides(this.current.id, this.current.x, this.current.y, nr)) { this.current.r = nr; return; }
+    // simple wall kick: try ±1
+    if (!this.collides(this.current.id, this.current.x-1, this.current.y, nr)) { this.current.x--; this.current.r = nr; return; }
+    if (!this.collides(this.current.id, this.current.x+1, this.current.y, nr)) { this.current.x++; this.current.r = nr; return; }
+  }
+
+  // --- effects (donations) --------------------------------------------------
+  applyEffect(effect) {
     if (!effect) return 0;
-
-    if (effect.type === 'swap_next') {
-      const all = [0,1,2,3,4,5,6];
-      const curNext = this.nextQueue[0];
-      const candidates = all.filter(p => p !== curNext);
-      this.nextQueue[0] = candidates[Math.floor(Math.random()*candidates.length)];
-      return 0;
-    }
-
     if (effect.type === 'clear_rows') {
-      let removed = 0;
-      for (let i=BOARD_H-1; i>=0 && removed<effect.count; ) {
-        if (this.board[i].some(c=>c)) { this.board.splice(i,1); this.board.unshift(Array(BOARD_W).fill(0)); removed++; }
-        else i--;
+      // clear N **playable** rows from the top of the stack preserving floor
+      let cleared = 0;
+      for (let n = 0; n < effect.count; n++) {
+        // find highest non-empty playable row
+        let target = -1;
+        for (let y = 0; y < BOARD_H - this.floorRows; y++) {
+          if (this.board[y].some(Boolean)) { target = y; break; }
+        }
+        if (target === -1) break;
+        this.board.splice(target, 1);
+        this.board.unshift(Array(BOARD_W).fill(0));
+        cleared++;
       }
-      // per your rule: these DO NOT add to score
+      // scoring handled in server/rules if needed
+      return cleared;
+    }
+    if (effect.type === 'swap_next') {
+      // Replace the next piece with a random new one
+      const rand = (Math.random()*7)|0;
+      if (this.nextQueue.length) this.nextQueue[0] = rand; else this.nextQueue.push(rand);
       return 0;
     }
-
     if (effect.type === 'half_rows') {
-      const occupied = this.board.filter(r => r.some(c=>c)).length;
-      const toRemove = Math.floor(occupied/2);
-      let removed = 0;
-      for (let i=BOARD_H-1; i>=0 && removed<toRemove; ) {
-        if (this.board[i].some(c=>c)) { this.board.splice(i,1); this.board.unshift(Array(BOARD_W).fill(0)); removed++; }
-        else i--;
+      // remove half of all **playable** occupied rows (round down)
+      const playable = BOARD_H - this.floorRows;
+      let occupied = [];
+      for (let y=0;y<playable;y++) if (this.board[y].some(Boolean)) occupied.push(y);
+      const toRemove = Math.floor(occupied.length / 2);
+      while (occupied.length && occupied.length > (occupied.length - toRemove)) {
+        const y = occupied.shift();
+        this.board.splice(y,1);
+        this.board.unshift(Array(BOARD_W).fill(0));
       }
-      // pink adds to score
-      this.score += removed;
-      return removed;
+      return toRemove;
     }
-
     if (effect.type === 'full_reset') {
-      const occupied = this.board.filter(r => r.some(c=>c)).length;
-      this.board = Array.from({length: BOARD_H}, () => Array(BOARD_W).fill(0));
-      this.score += occupied; // red adds to score
-      // keep current piece workable (respawn cleanly)
-      this.current = this.spawn();
-      return occupied;
+      // reset board but keep score/highScore
+      for (let y=0;y<BOARD_H - this.floorRows;y++) this.board[y].fill(0);
+      this.current = null;
+      this.nextQueue.length = 0; this._refillBag(); this.spawn();
+      return 0;
     }
-
     return 0;
   }
+
+  
+  parseCommand(text, author, cooldownMap) {
+    const cmd = parseCommand(text);
+    if (!cmd) return null;
+    const last = cooldownMap.get(author) || 0;
+    if (Date.now() - last < CHAT_COOLDOWN_MS) return null;
+    cooldownMap.set(author, Date.now());
+    return cmd;
+  }
+
+  queueVote(cmd) {
+    if (!this._windowCounts) this._windowCounts = { left: 0, right: 0, rotate: 0 };
+    if (cmd === 'left' || cmd === 'right' || cmd === 'rotate') {
+      this._windowCounts[cmd] = (this._windowCounts[cmd] || 0) + 1;
+    }
+  }
+
+  effectForAmount(amount) { return donationEffectFrom(amount); }
+
+  onGifts(count) { this.giftsRecent += count; }
 }

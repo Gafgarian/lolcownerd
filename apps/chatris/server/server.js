@@ -4,7 +4,8 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 import { supa } from './supabase.js';
 import { GameState } from './state.js';
-import { parseCommand, CMD_WINDOW_MS, CHAT_COOLDOWN_MS, donationEffectFrom, gravityFrom } from './rules.js';
+import { makeParserConnector } from './parser.js';
+import { parseCommand, CMD_WINDOW_MS, CHAT_COOLDOWN_MS, SPEED_DAMP, donationEffectFrom, gravityFrom, effectFromSuperchat } from './rules.js';
 import { admin } from './admin.js';
 import { extractYouTubeVideoId } from './youtube.js';
 import { resolveStreamFromVideoId } from './resolveStreamId.js';
@@ -32,15 +33,52 @@ function logLine(msg, data = {}) {
   console.log('[LOG]', payload);
 }
 
+let countdownUntil = 0;
+function startCountdown(ms = 3000) {
+  countdownUntil = Date.now() + ms;
+  broadcast('countdown', { seconds: Math.ceil(ms/1000) });
+}
+
+// choose parser origin
+function pickParserEnv() {
+  const isLocal = process.env.NODE_ENV !== 'production';
+  const baseUrl = isLocal ? process.env.PARSER_URL : 'http://localhost:8080';
+  const token   = isLocal ? process.env.PARSER_TOKEN : '';
+
+  if (!baseUrl) {
+    throw new Error('Parser base URL is not set. Provide PARSER_URL_LOCAL (dev) or PARSER_URL_PROD (prod).');
+  }
+  return { baseUrl, token };
+}
+
+const parser = makeParserConnector(game, { emitLog, broadcast });
+
 // Simple bearer token check
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
+
 app.use('/admin', (req, res, next) => {
   if (!ADMIN_TOKEN) return next(); // allow if not set (dev)
   const token = req.headers['x-admin-token'] || req.headers['authorization']?.replace(/^Bearer\s+/,'');
   if (token !== ADMIN_TOKEN) return res.status(401).json({ ok:false, error:'unauthorized' });
   next();
 });
-app.use('/admin', admin(game, emitLog));
+
+app.use('/admin', admin(
+  game,
+  emitLog,
+  broadcast,
+  {
+    clearQueues: () => {
+      game._windowCounts = { left:0, right:0, rotate:0 };
+      windowStart = Date.now();
+    },
+    addVote: (cmd) => {
+      game._windowCounts = game._windowCounts || { left:0, right:0, rotate:0 };
+    },
+    parser,                                   
+    pickParserEnv                           
+  }
+));
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.use('/', express.static(path.join(__dirname, '..', 'client')));
@@ -48,11 +86,34 @@ app.use('/', express.static(path.join(__dirname, '..', 'client')));
 // Allow admin to set streamId dynamically
 game.streamId = null; // set via /admin/stream
 setInterval(() => {
-  if (game.streamId) {
-    pollEvents(game.streamId);
-    pollViewerSnapshots(game.streamId);
+  if (!game.streamId) return;
+  if (!game.useParser) {
+    // legacy path (not used once parser is active)
+    // pollEvents(game.streamId);
   }
+  // always keep EMA via viewer_snapshots
+  pollViewerSnapshots(game.streamId);
 }, 500);
+
+
+app.post('/admin/restart', async (req, res) => {
+  try {
+    // clear queued chat votes
+    windowCounts = { left:0, right:0, rotate:0 };
+    windowStart = Date.now();
+
+    // wipe board/score but keep stream binding
+    game.resetAll();
+    game.start();
+
+    startCountdown(3000);
+
+    emitLog('game_restarted');
+    return res.json({ ok:true });
+  } catch (e) {
+    return res.status(500).json({ ok:false, error:String(e) });
+  }
+});
 
 // SSE to client overlay
 
@@ -116,13 +177,15 @@ app.get('/admin/ui', (req, res) => {
 <meta charset="utf-8" />
 <title>Chatris Admin</title>
 <style>
-  body{font-family:system-ui,Arial;margin:24px;background:#0b0e12;color:#e8eef7}
-  input,button{font-size:16px;padding:8px;border-radius:8px;border:1px solid #273244;background:#111623;color:#e8eef7}
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+  body{margin:24px;background:#0b0e12;color:#e7eefb;font-family:"Press Start 2P",system-ui,Arial}
+  input,button{font-size:14px;padding:10px;border-radius:10px;border:2px solid #2d3a57;background:#0f1626;color:#e7eefb}
   button{cursor:pointer}
   .row{display:flex;gap:8px;align-items:center;margin-bottom:12px}
-  .card{background:#121722;border:1px solid #263040;padding:12px;border-radius:10px;max-width:840px;margin-bottom:12px}
-  .votes{display:flex;gap:18px;font-size:18px}
-  .votes .pill{background:#0f1626;border:1px solid #2a3a55;border-radius:10px;padding:10px 14px;min-width:120px;text-align:center}
+  .card{background:linear-gradient(180deg,#0d1320,#0f1626);border:2px solid #2d3a57;border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.45),inset 0 2px 0 rgba(255,255,255,.04);padding:14px;margin-bottom:18px}
+  .votes{display:flex;gap:18px;font-size:14px}
+  .votes .pill{background:#0f1626;border:2px solid #2d3a57;border-radius:10px;padding:10px 14px;min-width:140px;text-align:center}
+  pre#out{white-space:pre-wrap}
 </style>
 <div class="card">
   <h2>Chatris Admin</h2>
@@ -143,11 +206,12 @@ app.get('/admin/ui', (req, res) => {
 </div>
 
 <div class="card">
-  <h3>Live Votes</h3>
+  <h3>Command Queue</h3>
   <div class="votes">
     <div class="pill">left: <b id="vleft">0</b></div>
     <div class="pill">right: <b id="vright">0</b></div>
     <div class="pill">rotate: <b id="vrot">0</b></div>
+    <div class="pill">viewers: <b id="adminViewers">0</b></div>
   </div>
 </div>
 
@@ -157,40 +221,51 @@ app.get('/admin/ui', (req, res) => {
 </div>
 
 <script>
-async function setByUrl(){
-  const url = document.getElementById('yt').value.trim();
-  const r = await fetch('/admin/stream', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url})});
-  const txt = await r.text(); try { document.getElementById('out').textContent = JSON.stringify(JSON.parse(txt), null, 2); } catch { document.getElementById('out').textContent = txt; }
-}
-async function setById(){
-  const stream_id = document.getElementById('sid').value.trim();
-  const r = await fetch('/admin/stream', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({stream_id})});
-  const txt = await r.text(); try { document.getElementById('out').textContent = JSON.stringify(JSON.parse(txt), null, 2); } catch { document.getElementById('out').textContent = txt; }
-}
-async function startGame(){ const r = await fetch('/admin/start', {method:'POST'}); document.getElementById('out').textContent = await r.text(); }
-async function clearBoard(){ const r = await fetch('/admin/clear', {method:'POST'}); document.getElementById('out').textContent = await r.text(); }
-async function endGame(){ const r = await fetch('/admin/end', {method:'POST'}); document.getElementById('out').textContent = await r.text(); }
+  async function setById(){
+    const stream_id = document.getElementById('sid').value.trim();
+    const r = await fetch('/admin/stream', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({stream_id})});
+    const txt = await r.text(); try { document.getElementById('out').textContent = JSON.stringify(JSON.parse(txt), null, 2); } catch { document.getElementById('out').textContent = txt; }
+  }
+  async function startGame(){ const r = await fetch('/admin/start', {method:'POST'}); document.getElementById('out').textContent = await r.text(); }
+  async function clearBoard(){ const r = await fetch('/admin/clear', {method:'POST'}); document.getElementById('out').textContent = await r.text(); }
+  async function endGame(){ const r = await fetch('/admin/end', {method:'POST'}); document.getElementById('out').textContent = await r.text(); }
 
-const es = new EventSource('/state');
-es.addEventListener('votes', e => {
-  const v = JSON.parse(e.data);
-  document.getElementById('vleft').textContent = v.left || 0;
-  document.getElementById('vright').textContent = v.right || 0;
-  document.getElementById('vrot').textContent = v.rotate || 0;
-});
-es.addEventListener('log', e => {
-  const line = JSON.parse(e.data);
-  const el = document.createElement('div');
-  const ts = new Date(line.t).toLocaleTimeString();
-  el.textContent = '[' + ts + '] ' + line.msg + ' ' + JSON.stringify(line);
-  const box = document.getElementById('log');
-  box.appendChild(el);
-  box.scrollTop = box.scrollHeight;
-});
+  const es = new EventSource('/state');
+
+  es.addEventListener('votes', e => {
+    const v = JSON.parse(e.data);
+    document.getElementById('vleft').textContent = v.left || 0;
+    document.getElementById('vright').textContent = v.right || 0;
+    document.getElementById('vrot').textContent = v.rotate || 0;
+  });
+  es.addEventListener('log', e => {
+    const line = JSON.parse(e.data);
+    const el = document.createElement('div');
+    const ts = new Date(line.t).toLocaleTimeString();
+    el.textContent = '[' + ts + '] ' + line.msg + ' ' + JSON.stringify(line);
+    const box = document.getElementById('log');
+    box.appendChild(el);
+    box.scrollTop = box.scrollHeight;
+  });
+  es.addEventListener('state', e=>{
+    const s = JSON.parse(e.data);
+    const el = document.getElementById('adminViewers');
+    if (el) el.textContent = s.emaViewers ?? 0;
+  });
+  async function setByUrl(){
+    const url = document.getElementById('yt').value.trim();
+    const r = await fetch('/admin/stream', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ url })
+    });
+    const txt = await r.text();
+    try { document.getElementById('out').textContent = JSON.stringify(JSON.parse(txt), null, 2); }
+    catch { document.getElementById('out').textContent = txt; }
+  }    
 </script>
   `);
 });
-
 
 function broadcast(type, data){
   const payload = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -271,18 +346,41 @@ async function pollEvents(stream_id){
       windowCounts[cmd] = (windowCounts[cmd]||0) + 1;
     }
 
-    if (e.type === 'superchat' && e.amount_float) {
-      const effect = donationEffectFrom(Number(e.amount_float));
+    if (e.type === 'superchat') {
+      const effect = effectFromSuperchat({
+        tier: e.tier,
+        color: e.color,
+        colorVars: e.colorVars,
+        amount: e.amount,
+        amount_float: e.amount_float
+      });
       if (effect) {
         const scoreBefore = game.score;
-        const rowsBefore = occupiedRowCount(game.board);
+        const rowsBefore  = occupiedRowCount(game.board);
+
         const added = game.applyEffect(effect);
+
+        if (effect.scoreCredit === false) {
+          game.score = scoreBefore; // cancel any score the effect awarded
+        }
         const scoreDelta = game.score - scoreBefore;
-        const rowsAfter = occupiedRowCount(game.board);
-        broadcast('toast', { kind:'superchat', author:e.author, message:e.message, amount:e.amount_float, effect, added });
+        const rowsAfter  = occupiedRowCount(game.board);
+
+        broadcast('toast', {
+          kind: 'superchat',
+          author: e.author,
+          message: e.message,
+          effect,
+          tier: e.tier || null
+        });
         emitLog('donation_effect', {
-          author: e.author, amount: Number(e.amount_float), effect,
-          scoreDelta, rowsBefore, rowsAfter
+          author: e.author,
+          effect,
+          scoreDelta,
+          scoreCredited: effect.scoreCredit !== false,
+          rowsBefore,
+          rowsAfter,
+          added
         });
       }
     }
@@ -300,35 +398,73 @@ async function pollEvents(stream_id){
   }
 }
 
-// Window resolution loop
-setInterval(()=>{
+// Window resolution loop (quiet)
+const VOTES_DEBUG = process.env.VOTES_DEBUG === '1';  // opt-in extra logs
+
+setInterval(() => {
   const now = Date.now();
-  if (now - windowStart >= CMD_WINDOW_MS) {
-    const { left, right, rotate } = windowCounts;
-    let cmd = null;
-    if (left>right && left>rotate) cmd='left';
-    else if (right>left && right>rotate) cmd='right';
-    else if (rotate>left && rotate>right) cmd='rotate';
-    
-    broadcast('votes', { left, right, rotate });    
-    if (cmd) {
-      if (cmd === 'left') game.moveLeft();
-      if (cmd === 'right') game.moveRight();
-      if (cmd === 'rotate') game.rotate();
-      emitLog('move_applied', { cmd, counts: { left, right, rotate } });
-    }
-    windowCounts = { left:0, right:0, rotate:0 };
-    windowStart = now;
+  if (now - windowStart < CMD_WINDOW_MS) return;
+  windowStart = now;
+
+  const wc = game._windowCounts || { left:0, right:0, rotate:0 };
+  const left   = wc.left   | 0;
+  const right  = wc.right  | 0;
+  const rotate = wc.rotate | 0;
+
+  // Only log snapshots when there is activity (or when explicitly debugged)
+  if (left || right || rotate) {
+    // emitLog('votes_snapshot', { left, right, rotate });
+  } else if (VOTES_DEBUG) {
+    emitLog('votes_idle', {});
   }
+
+  let cmd = null;
+  if (left>right && left>rotate) cmd='left';
+  else if (right>left && right>rotate) cmd='right';
+  else if (rotate>left && rotate>right) cmd='rotate';
+
+  broadcast('votes', { left, right, rotate });
+  if (left || right || rotate) emitLog('votes_snapshot', { left, right, rotate });
+
+  if (cmd) {
+    if (cmd === 'left') game.moveLeft();
+    if (cmd === 'right') game.moveRight();
+    if (cmd === 'rotate') game.rotate();
+    emitLog('move_applied', { cmd, counts: { left, right, rotate } });
+  }
+
+  game._windowCounts = { left:0, right:0, rotate:0 };
 }, 50);
 
 // Gravity loop
-setInterval(()=>{
+setInterval(() => {
   const now = Date.now();
-  const dt = now - lastPhysicsAt;
+  const dt  = now - lastPhysicsAt;
   lastPhysicsAt = now;
 
-  const gms = gravityFrom(game.emaViewers, undefined, game.giftsRecent);
+  // Gate physics while countdown is showing (set game.pausedUntil = Date.now()+3000 when you broadcast the countdown)
+  if (game.freezeUntil && now < game.freezeUntil) {
+    // Still broadcast HUD so UI stays live, but do NOT advance physics
+    broadcast('state', {
+      board: game.board,
+      score: game.score,
+      highScore: game.highScore,
+      emaViewers: Math.round(game.emaViewers),
+      gravityMs: 0, // paused
+      nextQueue: game.nextQueue?.slice(0, 3) ?? [],
+      current: game.current ? { id: game.current.id, x: game.current.x, y: game.current.y, r: game.current.r } : null,
+      next: game.nextQueue?.[0] ?? null,
+      sinceId: game.sinceId,
+      floorRows: game.floorRows,
+      boardW: game.board[0]?.length,
+      boardH: game.board.length
+    });
+    return;
+  }
+
+  // Apply global damp (≈ +0.25% slower) on top of viewer/gift-derived gravity
+  const gmsBase = gravityFrom(game.emaViewers, undefined, game.giftsRecent);
+  const gms     = Math.round(gmsBase * (Number(SPEED_DAMP) || 1.0025));
   maybeLogSpeedChange(gms, game.emaViewers);
 
   // Optional: decay gifts slowdown once per second
@@ -338,6 +474,7 @@ setInterval(()=>{
     game._giftDecayAcc = 0;
   }
 
+  // Advance physics with damped gravity
   game.tick(dt, gms);
 
   // Broadcast state to the overlay
@@ -346,13 +483,14 @@ setInterval(()=>{
     score: game.score,
     highScore: game.highScore,
     emaViewers: Math.round(game.emaViewers),
-    gravityMs: Math.round(gms),
-    nextQueue: game.nextQueue.slice(0,3),
-    current: game.current
-      ? { id: game.current.id, x: game.current.x, y: game.current.y, r: game.current.r }
-      : null,
-    next: game.nextQueue && game.nextQueue.length ? game.nextQueue[0] : null,
-    sinceId: game.sinceId
+    gravityMs: gms,
+    nextQueue: game.nextQueue?.slice(0, 3) ?? [],
+    current: game.current ? { id: game.current.id, x: game.current.x, y: game.current.y, r: game.current.r } : null,
+    next: game.nextQueue?.[0] ?? null,
+    sinceId: game.sinceId,
+    floorRows: game.floorRows,
+    boardW: game.board[0]?.length,
+    boardH: game.board.length
   });
 }, 120);
 
