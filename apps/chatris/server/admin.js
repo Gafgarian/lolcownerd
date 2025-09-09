@@ -1,7 +1,93 @@
 import express from 'express';
 import { extractYouTubeVideoId } from './youtube.js';
 import { resolveStreamFromVideoId } from './resolveStreamId.js';
-import { parseCommand, CHAT_COOLDOWN_MS, donationEffectFrom, effectFromSuperchat } from './rules.js';
+import { parseCommand, CHAT_COOLDOWN_MS, donationEffectFromTier, effectFromSuperchat } from './rules.js';
+
+// written-number dictionary (extend as you like)
+const WORDNUM = {
+  zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9,
+  ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16,
+  seventeen:17, eighteen:18, nineteen:19, twenty:20, thirty:30, forty:40,
+  fifty:50, sixty:60, seventy:70, eighty:80, ninety:90,
+  couple:2, few:3, dozen:12
+};
+
+// "twenty one", "forty-five" → 21/45; "one eighty" → 180
+function wordsToInt(text) {
+  const tokens = text.toLowerCase().replace(/-/g, ' ').split(/\s+/);
+  let total = 0, acc = 0, seen = false;
+  for (const t of tokens) {
+    if (t === 'and') continue;
+    const n = WORDNUM[t];
+    if (n == null) continue;
+    seen = true;
+    // simple tens+units (we're not handling thousands here)
+    if (n >= 20 && n % 10 === 0) acc += n;
+    else acc += n;
+  }
+  if (!seen) return null;
+  total += acc;
+  return total || null;
+}
+
+// Find a count in text (numbers, xN, or words). Default 1.
+function extractCount(text, fallback = 1) {
+  // explicit xN: "x5", "x 10"
+  const x = text.match(/\bx\s*([0-9]{1,3})\b/i);
+  if (x) return Math.min(99, parseInt(x[1], 10));
+
+  // plain number
+  const d = text.match(/\b([0-9]{1,3})\b/);
+  if (d) return Math.min(99, parseInt(d[1], 10));
+
+  // words
+  const w = wordsToInt(text);
+  if (w != null) return Math.min(99, w);
+
+  return fallback;
+}
+
+// Degrees: “180°”, “180 deg/degrees”, or written “one eighty”
+function extractDegrees(text) {
+  const withUnit = text.match(/\b([0-9]{1,3})\s*(?:°|deg|degree|degrees)\b/i);
+  if (withUnit) return parseInt(withUnit[1], 10);
+
+  const plain = text.match(/\b([0-9]{2,3})\b/);
+  if (plain) return parseInt(plain[1], 10);
+
+  const words = wordsToInt(text); // “one eighty”
+  if (words != null) return words;
+
+  return null;
+}
+
+// Normalize degrees to # of 90° rotations (45→1, 90→1, 180→2, 270→3)
+function rotationsFromDegrees(deg) {
+  if (deg == null) return 1;
+  const r = Math.max(0, Math.round(Number(deg) / 90));
+  return Math.min(3, r || 1);
+}
+
+// Parse a light-blue movement sentence
+// returns { kind: 'left'|'right'|'rotate', steps, degrees? }
+function parseLightBlueMove(text) {
+  const t = String(text || '').toLowerCase();
+
+  // Prefer rotate if it’s explicitly mentioned
+  if (/\b(rotate|spin|turn)\b/.test(t)) {
+    const deg = extractDegrees(t);
+    return { kind: 'rotate', steps: rotationsFromDegrees(deg), degrees: deg ?? 90 };
+  }
+
+  if (/\bleft\b/.test(t))  return { kind: 'left',  steps: extractCount(t, 1) };
+  if (/\bright\b/.test(t)) return { kind: 'right', steps: extractCount(t, 1) };
+
+  // Fallback: treat lone numbers with “spin” intent as rotate
+  const deg = extractDegrees(t);
+  if (deg != null) return { kind: 'rotate', steps: rotationsFromDegrees(deg), degrees: deg };
+
+  return { kind: null, steps: 0 };
+}
 
 export const admin = (game, emitLog = () => {}, broadcast = () => {}, utils = {}) => {
   const r = express.Router();
@@ -135,82 +221,84 @@ export const admin = (game, emitLog = () => {}, broadcast = () => {}, utils = {}
           try {
             const type = String(e.type || e.kind || e.event || '').toLowerCase();
 
-            if (type === 'chat') {
-              const msg = String(e.message || '');
-              const cmd = parseCommand(msg);
-              if (!cmd) return true;                // consumed (ignored)
-              const who = e.author || e.channel || 'anon';
-              if (!okToCountVote(who)) return true; // consumed (ignored due to cooldown)
-              addVote(cmd);
-              emitLog('chat_cmd', { author: who, cmd });
-              return true;
-            }
+            // 100% ignore normal chat now
+            if (type === 'chat') return;
 
+            // ----- Superchats drive gameplay -----
             if (type === 'superchat') {
-              // Always log receipt
-              emitLog('superchat_seen', {
-                author: e.author,
-                message: e.message,
-                tier: e.tier || null,
-                color: e.color || e.colorVars?.primary || null,
-                amount: e.amountFloat ?? e.amount ?? null
-              });
+              const tier = (String(e.tier || '').toLowerCase())
+                       || tierFromPrimaryColor(e?.colorVars?.primary || e?.color);
 
-              const effect = effectFromSuperchat({
-                tier: e.tier,
-                color: e.color,
-                colorVars: e.colorVars,
-                amount: e.amount,
-                amount_float: e.amountFloat
-              });
-              if (!effect) return;
-
-              // Apply with score policy
-              const scoreBefore = game.score;
-              const rowsBefore  = game.board.reduce((n, row) => n + (row.some(Boolean) ? 1 : 0), 0);
-
-              const added = game.applyEffect(effect);
-
-              // Revert score if this tier doesn't grant points
-              if (effect.scoreCredit === false) {
-                game.score = scoreBefore;
+              // BLUE = hard drop now
+              if (tier === 'blue') {
+                const fell = game.hardDrop();
+                emitLog('hard_drop', { author: e.author, tier, fell });
+                return;
               }
-              const scoreDelta = game.score - scoreBefore;
-              const rowsAfter  = game.board.reduce((n, row) => n + (row.some(Boolean) ? 1 : 0), 0);
 
-              broadcast('toast', {
-                kind: 'superchat',
-                author: e.author,
-                message: e.message,
-                effect,
-                tier: e.tier || null
-              });
+              // LIGHT BLUE = movement / rotation (from message text)
+              if (tier === 'lblue') {
+                const spec = parseLightBlueMove(String(e.message || ''));
+                const MAX_STEPS = 20;       // sane caps
+                const MAX_ROTS  = 3;
 
-              emitLog('donation_effect', {
-                author: e.author,
-                effect,
-                scoreDelta,
-                scoreCredited: effect.scoreCredit !== false,
-                rowsBefore,
-                rowsAfter,
-                added
-              });
-              return;
+                if (spec.kind === 'left' || spec.kind === 'right') {
+                  const want = Math.min(MAX_STEPS, Math.max(1, spec.steps|0));
+                  let applied = 0;
+
+                  for (let i = 0; i < want; i++) {
+                    const before = game.current ? game.current.x : null;
+                    if (spec.kind === 'left')  game.moveLeft();
+                    else                       game.moveRight();
+                    // stop if we didn’t actually move (blocked)
+                    if (!game.current || game.current.x === before) break;
+                    applied++;
+                  }
+
+                  emitLog('move_cmd', {
+                    author: e.author, tier, dir: spec.kind,
+                    requested: want, applied
+                  });
+                  return;
+                }
+
+                if (spec.kind === 'rotate') {
+                  const want = Math.min(MAX_ROTS, Math.max(1, spec.steps|0));
+                  let applied = 0;
+                  for (let i = 0; i < want; i++) {
+                    const before = game.current ? game.current.r : null;
+                    game.rotate();
+                    if (!game.current || game.current.r === before) break;
+                    applied++;
+                  }
+
+                  emitLog('rotate_cmd', {
+                    author: e.author, tier,
+                    requestedDegrees: spec.degrees ?? 90,
+                    requestedTurns: want, applied
+                  });
+                  return;
+                }
+
+                // No recognizable instruction
+                emitLog('lblue_ignored', { author: e.author, message: e.message });
+                return;
+              }
             }
 
+            // Gifts still slow the game slightly & are logged
             if (type === 'gift' || type === 'gifted' || type === 'gifted_members') {
               const n = Number(e.count ?? e.gift_count ?? 0);
               if (!n) return;
               game.giftsRecent += n;
               broadcast('toast', { kind: 'gift', author: e.author, count: n });
-              emitLog('gift', { author: e.author, count: n });  // ensure gifts show in the admin log
+              emitLog('gift', { author: e.author, count: n });
               return;
             }
-            
-            return true;
+
+            // Everything else (meta/title/etc.) ignored here
           } catch (err) {
             emitLog('parser_event_error', { error: String(err) });
-            return false;  
           }
         },
 

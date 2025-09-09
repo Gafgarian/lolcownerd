@@ -5,7 +5,7 @@ import bodyParser from 'body-parser';
 import { supa } from './supabase.js';
 import { GameState } from './state.js';
 import { makeParserConnector } from './parser.js';
-import { parseCommand, CMD_WINDOW_MS, CHAT_COOLDOWN_MS, SPEED_DAMP, donationEffectFrom, gravityFrom, effectFromSuperchat } from './rules.js';
+import { parseCommand, CMD_WINDOW_MS, CHAT_COOLDOWN_MS, SPEED_DAMP, donationEffectFromTier, gravityFrom, effectFromSuperchat } from './rules.js';
 import { admin } from './admin.js';
 import { extractYouTubeVideoId } from './youtube.js';
 import { resolveStreamFromVideoId } from './resolveStreamId.js';

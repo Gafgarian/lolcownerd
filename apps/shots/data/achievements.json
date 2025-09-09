@@ -1,0 +1,502 @@
+[
+  {
+    "threshold": 5,
+    "name": "Soft Launch, Hard Stumble",
+    "emoji": "\ud83c\udfaf"
+  },
+  {
+    "threshold": 10,
+    "name": "Five O\u2019Clock Somewhere",
+    "emoji": "\ud83e\udd43"
+  },
+  {
+    "threshold": 15,
+    "name": "First Pour Problems",
+    "emoji": "\ud83c\udfaf"
+  },
+  {
+    "threshold": 20,
+    "name": "Greys to Graze",
+    "emoji": "\u26a1"
+  },
+  {
+    "threshold": 25,
+    "name": "Shot Namers",
+    "emoji": "\ud83e\uddca"
+  },
+  {
+    "threshold": 30,
+    "name": "Happy Accident",
+    "emoji": "\ud83d\udd14"
+  },
+  {
+    "threshold": 35,
+    "name": "Barcade Boot",
+    "emoji": "\u26a1"
+  },
+  {
+    "threshold": 40,
+    "name": "Sip Happens",
+    "emoji": "\ud83e\udd43"
+  },
+  {
+    "threshold": 45,
+    "name": "Chat Neat",
+    "emoji": "\ud83d\udee1\ufe0f"
+  },
+  {
+    "threshold": 50,
+    "name": "Mixer Tricks",
+    "emoji": "\ud83d\udcc8"
+  },
+  {
+    "threshold": 60,
+    "name": "Light-Blue Lagoon",
+    "emoji": "\ud83d\ude80"
+  },
+  {
+    "threshold": 65,
+    "name": "Green Room Rage",
+    "emoji": "\ud83c\udf7e"
+  },
+  {
+    "threshold": 71,
+    "name": "Yellow Flag",
+    "emoji": "\u26a1"
+  },
+  {
+    "threshold": 77,
+    "name": "Orange Peelout",
+    "emoji": "\ud83c\udf7e"
+  },
+  {
+    "threshold": 84,
+    "name": "Pink Slipstream",
+    "emoji": "\ud83d\udcc8"
+  },
+  {
+    "threshold": 91,
+    "name": "Red-Line Riot",
+    "emoji": "\ud83d\udcc8"
+  },
+  {
+    "threshold": 99,
+    "name": "On the Rocks",
+    "emoji": "\ud83c\udfac"
+  },
+  {
+    "threshold": 108,
+    "name": "Buff & Tumble",
+    "emoji": "\ud83e\udd43"
+  },
+  {
+    "threshold": 117,
+    "name": "Tipsy Ticker",
+    "emoji": "\ud83c\udf78"
+  },
+  {
+    "threshold": 127,
+    "name": "Drama on Draft",
+    "emoji": "\ud83c\udf9b\ufe0f"
+  },
+  {
+    "threshold": 138,
+    "name": "Proof of Nerd",
+    "emoji": "\ud83c\udf96\ufe0f"
+  },
+  {
+    "threshold": 150,
+    "name": "Banhammer Holster",
+    "emoji": "\ud83c\udf79"
+  },
+  {
+    "threshold": 163,
+    "name": "Gift Train Boarding",
+    "emoji": "\ud83d\ude80"
+  },
+  {
+    "threshold": 177,
+    "name": "Greenshield Wall",
+    "emoji": "\ud83e\udd43"
+  },
+  {
+    "threshold": 192,
+    "name": "No-Drink November-ish",
+    "emoji": "\ud83c\udfac"
+  },
+  {
+    "threshold": 209,
+    "name": "Mute Button Mercy",
+    "emoji": "\ud83c\udfaf"
+  },
+  {
+    "threshold": 227,
+    "name": "Server Shuffle",
+    "emoji": "\u26a1"
+  },
+  {
+    "threshold": 247,
+    "name": "Sleep Stream Save",
+    "emoji": "\ud83d\udd79\ufe0f"
+  },
+  {
+    "threshold": 268,
+    "name": "Dance Break Deluxe",
+    "emoji": "\ud83c\udfac"
+  },
+  {
+    "threshold": 291,
+    "name": "Snack Attack Pact",
+    "emoji": "\ud83e\uddca"
+  },
+  {
+    "threshold": 316,
+    "name": "Greys Go Green",
+    "emoji": "\ud83e\udd43"
+  },
+  {
+    "threshold": 343,
+    "name": "Sponsor Friendly\u2122",
+    "emoji": "\ud83c\udfc6"
+  },
+  {
+    "threshold": 373,
+    "name": "Clip It, Ship It",
+    "emoji": "\ud83d\udee1\ufe0f"
+  },
+  {
+    "threshold": 405,
+    "name": "Mod Squad Nod",
+    "emoji": "\ud83c\udfaf"
+  },
+  {
+    "threshold": 440,
+    "name": "Mic Still Hot",
+    "emoji": "\ud83e\uddca"
+  },
+  {
+    "threshold": 478,
+    "name": "Cold Open, Warm Takes",
+    "emoji": "\ud83d\udd79\ufe0f"
+  },
+  {
+    "threshold": 520,
+    "name": "AFK But Thirsty",
+    "emoji": "\ud83c\udfc6"
+  },
+  {
+    "threshold": 565,
+    "name": "Algorithm Aperitif",
+    "emoji": "\ud83c\udf31"
+  },
+  {
+    "threshold": 614,
+    "name": "Pour Lore",
+    "emoji": "\ud83d\udece\ufe0f"
+  },
+  {
+    "threshold": 667,
+    "name": "Crown Control",
+    "emoji": "\ud83c\udf96\ufe0f"
+  },
+  {
+    "threshold": 725,
+    "name": "Shaken, Not Banned",
+    "emoji": "\ud83c\udf7e"
+  },
+  {
+    "threshold": 788,
+    "name": "Bar Flywheel",
+    "emoji": "\ud83d\ude80"
+  },
+  {
+    "threshold": 856,
+    "name": "Chat, Don\u2019t Spam",
+    "emoji": "\ud83c\udf9b\ufe0f"
+  },
+  {
+    "threshold": 930,
+    "name": "Emoji Economy",
+    "emoji": "\ud83d\udcc8"
+  },
+  {
+    "threshold": 1011,
+    "name": "Belly Laughs Neat",
+    "emoji": "\ud83c\udf96\ufe0f"
+  },
+  {
+    "threshold": 1099,
+    "name": "Rage-Bait Resist",
+    "emoji": "\ud83c\udf96\ufe0f"
+  },
+  {
+    "threshold": 1195,
+    "name": "Topic Tequila",
+    "emoji": "\ud83d\udca5"
+  },
+  {
+    "threshold": 1299,
+    "name": "Segment Spritzer",
+    "emoji": "\ud83d\udd79\ufe0f"
+  },
+  {
+    "threshold": 1412,
+    "name": "W Key Whiskey",
+    "emoji": "\ud83c\udf7e"
+  },
+  {
+    "threshold": 1535,
+    "name": "Cooldown Cooler",
+    "emoji": "\ud83c\udf96\ufe0f"
+  },
+  {
+    "threshold": 1668,
+    "name": "Queue The Clinks",
+    "emoji": "\ud83d\udd14"
+  },
+  {
+    "threshold": 1813,
+    "name": "Hype Hydration",
+    "emoji": "\ud83c\udf78"
+  },
+  {
+    "threshold": 1971,
+    "name": "Shot Caller",
+    "emoji": "\ud83d\udd14"
+  },
+  {
+    "threshold": 2142,
+    "name": "Greens Over Grey Goo",
+    "emoji": "\ud83d\ude80"
+  },
+  {
+    "threshold": 2328,
+    "name": "Latency Libation",
+    "emoji": "\ud83c\udf7e"
+  },
+  {
+    "threshold": 2530,
+    "name": "Boss Notified",
+    "emoji": "\ud83c\udf31"
+  },
+  {
+    "threshold": 2750,
+    "name": "Sober Overlay",
+    "emoji": "\ud83d\udca5"
+  },
+  {
+    "threshold": 2989,
+    "name": "Responsible-ish",
+    "emoji": "\ud83c\udf96\ufe0f"
+  },
+  {
+    "threshold": 3249,
+    "name": "Crisis Averted",
+    "emoji": "\ud83c\udf9b\ufe0f"
+  },
+  {
+    "threshold": 3531,
+    "name": "Filler Killer",
+    "emoji": "\ud83c\udf9b\ufe0f"
+  },
+  {
+    "threshold": 3838,
+    "name": "Monetize This Mixer",
+    "emoji": "\ud83c\udf7a"
+  },
+  {
+    "threshold": 4172,
+    "name": "Drama Drought",
+    "emoji": "\ud83e\udd43"
+  },
+  {
+    "threshold": 4535,
+    "name": "Backseat Bartender",
+    "emoji": "\ud83c\udf7a"
+  },
+  {
+    "threshold": 4929,
+    "name": "Low-Fidelity Highballs",
+    "emoji": "\ud83c\udf7a"
+  },
+  {
+    "threshold": 5357,
+    "name": "Ad-Friendly Fizz",
+    "emoji": "\ud83d\udcc8"
+  },
+  {
+    "threshold": 5823,
+    "name": "TOS Compliant Cosmo",
+    "emoji": "\ud83c\udf7a"
+  },
+  {
+    "threshold": 6329,
+    "name": "Public Apology Sour",
+    "emoji": "\ud83d\udca5"
+  },
+  {
+    "threshold": 6879,
+    "name": "Rumor Refactor",
+    "emoji": "\ud83d\udd14"
+  },
+  {
+    "threshold": 7477,
+    "name": "Clip Farm Charm",
+    "emoji": "\ud83e\udd43"
+  },
+  {
+    "threshold": 8127,
+    "name": "Bottle Episode",
+    "emoji": "\u26a1"
+  },
+  {
+    "threshold": 8833,
+    "name": "Afterparty Algorithm",
+    "emoji": "\ud83c\udf78"
+  },
+  {
+    "threshold": 9601,
+    "name": "Overtime Old Fashioned",
+    "emoji": "\ud83c\udfc6"
+  },
+  {
+    "threshold": 10436,
+    "name": "Chat\u2019s Choice Chaser",
+    "emoji": "\ud83c\udf9b\ufe0f"
+  },
+  {
+    "threshold": 11343,
+    "name": "Keg of Holding",
+    "emoji": "\ud83c\udf79"
+  },
+  {
+    "threshold": 12329,
+    "name": "Neon Nightcap",
+    "emoji": "\ud83c\udfac"
+  },
+  {
+    "threshold": 13401,
+    "name": "Gifted Gravity Well",
+    "emoji": "\ud83c\udfac"
+  },
+  {
+    "threshold": 14566,
+    "name": "Content Fermentation",
+    "emoji": "\ud83c\udf31"
+  },
+  {
+    "threshold": 15832,
+    "name": "Barback Backbone",
+    "emoji": "\ud83c\udf96\ufe0f"
+  },
+  {
+    "threshold": 17208,
+    "name": "Room Temp Take",
+    "emoji": "\ud83d\udece\ufe0f"
+  },
+  {
+    "threshold": 18704,
+    "name": "Raid-Ready Rye",
+    "emoji": "\ud83d\udd79\ufe0f"
+  },
+  {
+    "threshold": 20330,
+    "name": "Shot Clock Reset",
+    "emoji": "\u26a1"
+  },
+  {
+    "threshold": 22097,
+    "name": "Cooldown Karaoke",
+    "emoji": "\ud83c\udf9b\ufe0f"
+  },
+  {
+    "threshold": 24018,
+    "name": "Safe Word: Water",
+    "emoji": "\ud83d\udca5"
+  },
+  {
+    "threshold": 26106,
+    "name": "Timeout Tonic",
+    "emoji": "\ud83e\udd43"
+  },
+  {
+    "threshold": 28375,
+    "name": "Don\u2019t Drive, Go Live",
+    "emoji": "\ud83c\udf78"
+  },
+  {
+    "threshold": 30842,
+    "name": "Lobby Lullaby",
+    "emoji": "\ud83c\udfaf"
+  },
+  {
+    "threshold": 33523,
+    "name": "Fridge-Cam Finale",
+    "emoji": "\ud83d\udca5"
+  },
+  {
+    "threshold": 36437,
+    "name": "Greens\u2019 Jubilee",
+    "emoji": "\ud83e\udd43"
+  },
+  {
+    "threshold": 39604,
+    "name": "Pour Decisions Deluxe",
+    "emoji": "\ud83c\udfaf"
+  },
+  {
+    "threshold": 43047,
+    "name": "Ascending Proof",
+    "emoji": "\ud83d\udcc8"
+  },
+  {
+    "threshold": 46789,
+    "name": "Drama-Proofed",
+    "emoji": "\ud83c\udf31"
+  },
+  {
+    "threshold": 50856,
+    "name": "No Ragrets Lager",
+    "emoji": "\ud83e\uddca"
+  },
+  {
+    "threshold": 55277,
+    "name": "Dog in the Bar-cade",
+    "emoji": "\ud83c\udfaf"
+  },
+  {
+    "threshold": 60082,
+    "name": "Monty\u2019s Treats",
+    "emoji": "\ud83d\udca5"
+  },
+  {
+    "threshold": 65305,
+    "name": "NDF Toast",
+    "emoji": "\ud83c\udfac"
+  },
+  {
+    "threshold": 70982,
+    "name": "The Great Unban-Reban",
+    "emoji": "\ud83d\udee1\ufe0f"
+  },
+  {
+    "threshold": 77152,
+    "name": "BPM: Beers Per Minute",
+    "emoji": "\ud83c\udfac"
+  },
+  {
+    "threshold": 83859,
+    "name": "Clipstorm Warning",
+    "emoji": "\ud83e\udd43"
+  },
+  {
+    "threshold": 91149,
+    "name": "Sponsor\u2019s Delight",
+    "emoji": "\ud83d\ude80"
+  },
+  {
+    "threshold": 99072,
+    "name": "Barkeep Bot Online",
+    "emoji": "\ud83c\udf79"
+  }
+]

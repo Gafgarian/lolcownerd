@@ -1,4 +1,4 @@
-import { parseCommand, CHAT_COOLDOWN_MS, donationEffectFrom } from './rules.js';
+import { parseCommand, CHAT_COOLDOWN_MS, donationEffectFromTier } from './rules.js';
 
 const TD = new TextDecoder();
 
@@ -233,20 +233,7 @@ export function makeParserConnector(game, { emitLog, broadcast }) {
   function handle(m) {
     const type = String(m.type || '').toLowerCase();
 
-    if (type === 'chat') {
-      const msg = String(m.message || '');
-      const cmd = parseCommand(msg);
-      if (!cmd) return;
-      const who  = m.author || m.channel || 'anon';
-      const last = cooldownMap.get(who) || 0;
-      if (Date.now() - last < CHAT_COOLDOWN_MS) return;
-      cooldownMap.set(who, Date.now());
-      // write into game’s bucket so the window loop sees it
-      game._windowCounts = game._windowCounts || { left:0, right:0, rotate:0 };
-      game._windowCounts[cmd] = (game._windowCounts[cmd] || 0) + 1;
-      emitLog('chat_cmd', { author: who, cmd });
-      return;
-    }
+    if (type === 'chat') return;
 
     if (type === 'superchat') {
       const amount = Number(m.amount || 0);

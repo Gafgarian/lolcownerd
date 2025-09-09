@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Pour Decisions — Viewer</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="viewer-wrap">
+      <!-- DRUNK METER (full width of scene, above the bar) -->
+      <section class="meter-wrap">
+        <div class="meter-head">
+          <span class="meter-title">Drunk Meter</span>
+          <span class="meter-stats">
+            Max: <span id="drunkTop">0%</span>
+            • Record Shots: <span id="shotRecord">0</span>
+          </span>
+        </div>
+        <div class="meter-rail">
+          <!-- 8 uneven visual segments -->
+          <div class="seg s1"></div><div class="seg s2"></div><div class="seg s3"></div><div class="seg s4"></div>
+          <div class="seg s5"></div><div class="seg s6"></div><div class="seg s7"></div><div class="seg s8"></div>
+          <div id="meterFill" class="fill">
+                <span class="meter__pct" id="meterPct">0%</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- BAR SCENE (primary content) -->
+      <section class="left-stage">
+        <!-- background & foreground -->
+        <img class="bar-bg" src="/assets/bar-bg.png" alt="">
+        <div class="host-wrap">
+          <img id="hostImg" class="host" src="/assets/hosts/buff/avatar-1.png" alt="host">
+        </div>
+        <!-- the lane where shot glasses slide -->
+        <div id="shotsLane" aria-hidden="true"></div>
+        <!-- “TV” counter in the top-right, hanging on wall -->
+        <div class="tv-counter" aria-live="polite">
+          <div class="tv-bezel">
+            <div class="tv-label">Total Shots</div>
+            <div id="total" class="tv-value">0</div>
+            <div class="tv-scanlines"></div>
+          </div>
+          <div class="tv-shadow"></div>
+        </div>
+        <!-- Chalkboard “SPECIAL” timer, bottom-left -->
+        <aside class="chalkboard">
+          <div class="chalk-frame">
+            <div class="chalk-title">SPECIAL</div>
+            <div id="eta" class="chalk-time">—</div>
+            <div class="chalk-sub">of AUTO SHOTS</div>
+          </div>
+        </aside>
+
+        <img class="bar-fg" src="/assets/bar-fg.png" alt="">
+      </section>
+    </main>
+
+    <div id="toast" class="toast" aria-live="polite"></div>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

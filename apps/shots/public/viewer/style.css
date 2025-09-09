@@ -1,0 +1,325 @@
+:root{
+  --bg: #191518;
+  --wood1: #4c2b1b;
+  --wood2: #2a211c;
+  --fg: #e8eaf4;
+  --muted: #9aa1b6;
+
+  /* neon for meter */
+  --neon1:#005bd9; --neon2:#fd75da;
+
+  /* TV */
+  --tv-bronze:#605d5a;
+  --tv-bezel:#0c0f16;
+  --tv-face:#0b111b;
+
+  /* Chalkboard */
+  --chalk-board:#11311f;
+  --chalk-edge:#6c4319;
+  --chalk:#f2f2f2;
+}
+
+html,body{ margin:0; background:var(--bg); color:var(--fg); font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial; min-height:100vh; }
+
+/* wrapper keeps meter the same width as the scene */
+.viewer-wrap{
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 14px 18px 28px;
+}
+
+/* ===== Drunk meter (top, full scene width) ===== */
+/* meter container */
+.meter {
+  position: relative;
+  width: 100%;
+  height: 18px;
+  border-radius: 10px;
+  background: #171c23;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+}
+
+/* the fill bar */
+.meter__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 0%;                /* driven by JS */
+  background: linear-gradient(90deg,#5ac8fa,#2ecc71);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end; /* percent rides the fill’s right edge */
+  padding-right: 8px;        /* breathing room for the text */
+  transition: width 120ms linear;
+}
+
+/* the percent text that rides inside the bar */
+.meter__pct{
+  position:static;                  /* ensure it's inside the fill */
+  font: 800 15px/1 Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+  color:#000;                       /* readable on neon */
+  text-shadow: 1px 1px 3px rgb(255 255 255 / 64%);
+  pointer-events:none;
+  user-select:none;
+  white-space:nowrap;
+}
+
+
+/* When the fill is very small, let the text stay readable by flipping color */
+.meter--low .meter__pct{
+  color:#cfd7e3; 
+  text-shadow:0 1px 0 rgba(0,0,0,.6);
+}
+.meter-wrap{ margin: 4px auto 12px; }
+.meter-head{
+  display:flex; justify-content:space-between; align-items:center;
+  font-weight:700; margin: 0 2px 6px;
+}
+.meter-title{ text-shadow:0 0 10px rgba(102,166,255,.45); }
+.meter-stats{ color:var(--muted); font-weight:700; }
+.meter-rail{
+  position:relative;
+  height:28px;
+  border-radius:14px;
+  overflow:visible;
+  background:#0c0f1a;
+  border:1px solid #20263d;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+}
+
+/* the dynamic fill becomes a flex row so the % rides the right edge */
+.fill{
+  position:absolute; left:0; top:0; bottom:0;
+  width:0%;
+  display:flex;                     /* NEW */
+  align-items:center;               /* vertical center */
+  justify-content:flex-end;         /* text hugs the end */
+  padding-right:10px;               /* ≈10px from the end */
+  background:linear-gradient(90deg, var(--neon1), var(--neon2));
+  box-shadow:0 0 18px rgba(102,166,255,.45), 0 0 36px rgba(230,155,211,.28);
+  transition: width .18s ease;
+  border-radius: 14px;
+}
+.marker{
+  position:absolute; top:-28px; transform:translateX(-50%);
+  padding:2px 8px; border-radius:10px; background:#141421; border:1px solid #2a3048;
+  font-weight:800; font-size:12px;
+}
+.seg{ position:absolute; top:0; bottom:0; border-right:1px dashed #33405f; opacity:.7; }
+.s1{ left:12.5%; } .s2{ left:25%; } .s3{ left:36.5%; } .s4{ left:47%; }
+.s5{ left:57%; } .s6{ left:66%; } .s7{ left:74%; } .s8{ left:82%; }
+
+/* ===== BAR SCENE ===== */
+.left-stage{
+  position:relative;
+  border-radius:20px;
+  overflow:hidden;
+  background:
+    radial-gradient(1000px 700px at -10% -10%, rgba(102,166,255,0.12), transparent 60%),
+    radial-gradient(900px 600px at 110% 0%, rgba(230,155,211,0.10), transparent 70%),
+    repeating-linear-gradient( 90deg, var(--wood1) 0 38px, var(--wood2) 38px 76px);
+  box-shadow: 0 30px 60px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.03);
+
+  /* keep the whole background artwork visible */
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  min-height: 480px;
+}
+
+.bar-bg{
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  object-fit: contain; /* ensures the *whole* art stays visible */
+}
+
+.bar-fg{
+  position:absolute;
+  bottom: -100px;
+  width:100%;
+  height:30%;
+  z-index: 5;
+}
+
+/* host sits in front of shots, behind bar-fg */
+.host-wrap{
+  position:absolute; left:0; right:0%; bottom:0%;
+  height:70%;
+  display:flex; align-items:flex-end; justify-content:center;
+  z-index:2;
+}
+.host{ max-height: 420px; width:auto; filter: drop-shadow(0 18px 30px rgba(0,0,0,0.55)); transition: transform .08s ease; }
+
+/* shot lane (glasses slide under host, over background) */
+#shotsLane{
+  position:absolute; left:0; right:0;
+  bottom: 7%;        /* aligns with bar counter depth in your art */
+  height: 90px; z-index:10; pointer-events:none; overflow:visible;
+}
+/* Glass sprite; motion handled in JS (Web Animations API) */
+#shotsLane .shot{
+  position:absolute;
+  width:30px;                
+  height:auto;
+  opacity:0.95;
+  will-change: transform, opacity;
+}
+
+/* ===== “TV” TOTAL SHOTS (top-right, wall mounted) ===== */
+.tv-counter{
+  position: absolute;
+  top: 3%;
+  right: 5%;
+  width: clamp(180px, 18%, 240px);
+  z-index: 2;
+  pointer-events: none;
+}
+.tv-bezel{
+  position:relative;
+  background: radial-gradient(120% 120% at 50% 40%, #0e1523 0%, #0a0e15 60%, #05070a 100%);
+  border: 3px solid var(--tv-bronze);
+  border-radius: 3pxpx;
+  padding: 18px 12px 18px;
+  box-shadow:
+    inset 0 0 28px rgba(58,95,180,.35),
+    0 10px 24px rgba(0,0,0,.55),
+    0 0 0 6px rgba(0,0,0,.35);
+}
+.tv-label{
+  text-align:center; color:#c6d7ff; font-weight:800; letter-spacing:.3px;
+  text-shadow: 0 0 12px rgba(102,166,255,.45);
+}
+.tv-value{
+  text-align:center; font-size:3rem; font-weight:900; line-height:1.1;
+  color:#e8f1ff; text-shadow: 0 0 20px rgba(102,166,255,.35), 0 0 60px rgba(80,160,255,.25);
+}
+.tv-scanlines{
+  position:absolute; inset:6px; background: repeating-linear-gradient( to bottom, rgba(255,255,255,.06) 0 2px, transparent 2px 4px );
+  mix-blend-mode: overlay; pointer-events:none; border-radius:12px;
+}
+.tv-shadow{ position:absolute; left:8px; right:8px; bottom:-10px; height:18px; filter:blur(8px); background: radial-gradient(50% 60% at 50% 0, rgba(0,0,0,.45), transparent 70%); }
+
+/* ===== Chalkboard “SPECIAL” timer (bottom-left) ===== */
+.chalkboard{
+  position: absolute;
+  right: 5%;
+  bottom: 50%;
+  width: clamp(220px, 26%, 320px);
+  z-index: 10;
+  pointer-events: none;
+}
+.chalk-frame{
+  background: linear-gradient(#143a23,#0d2a1a);
+  border: 5px solid var(--chalk-edge);
+  border-radius: 5px;
+  box-shadow: 0 10px 24px rgba(0,0,0,.55), inset 0 0 0 2px rgba(255,255,255,.06);
+  padding: 14px 16px 16px;
+  position:relative;
+}
+.chalk-title{
+  text-align:center; color:var(--chalk); font-weight:900; letter-spacing:.2em;
+  text-shadow: 0 0 6px rgba(255,255,255,.25), 0 0 20px rgba(255,255,255,.12);
+}
+.chalk-time{
+  text-align:center; font-size: 2.6rem; font-weight: 900; color:var(--chalk);
+  margin: 6px 0 2px;
+  text-shadow: 0 0 12px rgba(255,255,255,.2), 0 0 26px rgba(255,255,255,.1);
+}
+.chalk-sub{
+  text-align:center; color:var(--chalk); opacity:.9; font-weight:800; letter-spacing:.08em;
+}
+
+/* Trophy button (bottom-right of the scene) */
+.achv-btn{
+  position:absolute; right:18px; bottom:18px;
+  width:46px; height:46px; border-radius:10px;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(20,24,28,.85); border:1px solid rgba(255,255,255,.08);
+  box-shadow:0 8px 24px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.05);
+  cursor:pointer; transition:transform .12s ease, background .12s ease;
+  z-index: 20;              
+  pointer-events: auto;    
+}
+.achv-btn:hover{ transform:translateY(-1px); background:rgba(26,30,35,.9); }
+.achv-btn .trophy{ filter: drop-shadow(0 2px 2px rgba(0,0,0,.35)); font-size:20px; }
+
+/* Modal overlay */
+.achv-overlay{
+  position:absolute; inset:0; background:rgba(0,0,0,.55);
+  backdrop-filter: blur(2px); z-index:40;
+}
+
+/* Centered modal */
+.achv-modal{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  width:min(960px, calc(100% - 64px));
+  max-height:min(70vh, 640px);
+  background:rgba(22,25,30,.96);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:14px; padding:16px 16px 12px;
+  box-shadow:0 16px 64px rgba(0,0,0,.45); z-index:50;
+  display:flex; flex-direction:column; gap:12px;
+}
+
+.achv-close{
+  position:absolute; right:10px; top:10px;
+  width:28px; height:28px; border-radius:8px;
+  background:rgba(255,255,255,.06); color:#fff; font-size:18px;
+  border:1px solid rgba(255,255,255,.12); line-height:26px;
+  cursor:pointer;
+}
+.achv-close:hover{ background:rgba(255,255,255,.12); }
+
+.achv-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(260px,1fr));
+  gap:12px;
+  overflow:auto;
+  padding:10px;
+  flex:1;
+  border-top:1px solid rgba(255,255,255,.08);
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+
+/* Tile (card) */
+.achv-card{
+  display:grid;
+  grid-template-columns: 36px 1fr auto;
+  align-items:center;
+  gap:10px;
+  padding:12px 14px;
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:12px;
+  box-shadow:0 6px 18px rgba(0,0,0,.25);
+}
+
+.achv-card .emoji{ font-size:20px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); }
+.achv-card .name { font-weight:700; line-height:1.15; }
+.achv-card .meta { font-size:12px; opacity:.8; }
+.achv-card .badge{
+  font-size:12px; font-weight:800; opacity:.9;
+  padding:4px 8px; border-radius:8px;
+  background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.12);
+}
+
+.achv-footnote{ margin:2px 4px 0; font-size:12px; opacity:.65; }
+/* Lock the page scroll when modal is open */
+body.modal-open{ overflow: hidden; }
+
+/* Toast (achievements) */
+.toast{
+  position:fixed; left:50%; top:8%; transform:translateX(-50%);
+  background:#141421; border:1px solid #2a3048; color:var(--fg);
+  padding:10px 14px; border-radius:12px; z-index:9999; display:none;
+  box-shadow: 0 18px 36px rgba(0,0,0,0.45);
+}
+
+/* Responsive */
+@media (max-width: 900px){
+  .host{ max-height: 320px; }
+  .tv-counter{ top: 4%; right: 2.5%; }
+  .chalkboard{ left: 3%; bottom: 4%; }
+}

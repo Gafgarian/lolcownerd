@@ -1,5 +1,5 @@
 import {
-  BOARD_W, BOARD_H, FLOOR_ROWS, parseCommand, CHAT_COOLDOWN_MS, donationEffectFrom
+  BOARD_W, BOARD_H, FLOOR_ROWS, parseCommand, CHAT_COOLDOWN_MS, donationEffectFromTier
 } from './rules.js';
 
 // If you keep SHAPES here:
@@ -123,9 +123,27 @@ export class GameState {
     if (!this.current) return;
     const nr = (this.current.r + 1) % 4;
     if (!this.collides(this.current.id, this.current.x, this.current.y, nr)) { this.current.r = nr; return; }
-    // simple wall kick: try ±1
     if (!this.collides(this.current.id, this.current.x-1, this.current.y, nr)) { this.current.x--; this.current.r = nr; return; }
     if (!this.collides(this.current.id, this.current.x+1, this.current.y, nr)) { this.current.x++; this.current.r = nr; return; }
+  }
+
+  /** Instantly drop the current piece to the floor, lock it, spawn next.
+   * @returns {number} cells the piece fell (0 if no piece)
+   */
+  hardDrop() {
+    if (!this.current) return 0;
+
+    const { id, r } = this.current;
+    let { x, y } = this.current;
+    let dist = 0;
+
+    while (!this.collides(id, x, y + 1, r)) { y++; dist++; }
+    this.current.y = y;
+
+    // Lock into the board (this will also clear lines and update score)
+    this.lockCurrent();
+    this.spawn();
+    return dist;
   }
 
   // --- effects (donations) --------------------------------------------------
@@ -194,7 +212,7 @@ export class GameState {
     }
   }
 
-  effectForAmount(amount) { return donationEffectFrom(amount); }
+  effectForAmount(amount) { return donationEffectFromTier(amount); }
 
   onGifts(count) { this.giftsRecent += count; }
 }

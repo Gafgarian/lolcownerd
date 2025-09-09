@@ -1,10 +1,10 @@
-export const BOARD_W = 20;
+export const BOARD_W = 15;
 export const BOARD_H = 40;
 export const FLOOR_ROWS = 2;   
 
 
-export const CMD_WINDOW_MS = 700;
-export const CHAT_COOLDOWN_MS = 50;
+export const CMD_WINDOW_MS = 300;
+export const CHAT_COOLDOWN_MS = 0;
 
 // export const CMD_WINDOW_MS = 700;
 // export const CHAT_COOLDOWN_MS = 400;
@@ -12,7 +12,7 @@ export const BASE_GRAVITY_MS = 1000;
 export const MIN_GRAVITY_MS = 150;
 
 // NEW: tiny global dampener (+0.25% gravity ms → slightly slower)
-export const SPEED_DAMP = 1.5;
+export const SPEED_DAMP = 2;
 
 // YouTube superchat colors → canonical tier name
 export const COLOR_TO_TIER = {
@@ -69,15 +69,19 @@ export const parseCommand = (text = '') => {
 };
 
 // Donation effect mapping
-export const donationEffectFrom = (amount) => {
-  if (amount >= 100) return { type: 'full_reset' };
-  if (amount >= 50)  return { type: 'half_rows' };
-  if (amount >= 20)  return { type: 'clear_rows', count: 8 };
-  if (amount >= 10)  return { type: 'clear_rows', count: 3 };
-  if (amount >= 5)   return { type: 'clear_rows', count: 1 };
-  if (amount >= 2)   return { type: 'swap_next' };
+export function donationEffectFromTier(tier) {
+  const t = String(tier || '').toLowerCase();
+  // light blue & blue are reserved for movement/drop now → no board effects
+  if (t === 'lightblue' || t === 'lblue' || t === 'cyan' || t === 'blue') return null;
+
+  // Adjust to taste:
+  if (t === 'green')  return { type: 'clear_rows', count: 1 };
+  if (t === 'yellow') return { type: 'clear_rows', count: 3 };
+  if (t === 'orange') return { type: 'clear_rows', count: 8 };
+  if (t === 'pink')   return { type: 'half_rows' };
+  if (t === 'red')    return { type: 'full_reset' };
   return null;
-};
+}
 
 // Gift scaling (linear 2% each by default)
 export const giftFactor = (giftCount) => Math.pow(0.98, giftCount); // clamp later
