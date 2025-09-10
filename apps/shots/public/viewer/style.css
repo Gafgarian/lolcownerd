@@ -334,6 +334,4 @@ body.modal-open{ overflow: hidden; }
 /* Responsive */
 @media (max-width: 900px){
   .host{ max-height: 320px; }
-  .tv-counter{ top: 4%; right: 2.5%; }
-  .chalkboard{ left: 3%; bottom: 4%; }
 }
