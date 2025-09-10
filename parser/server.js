@@ -65,6 +65,7 @@ process.on('uncaughtException',  e => log.error('[uncaughtException]', e));
 /* --------------------------------- state ---------------------------------- */
 /** id -> { browser, context, page, sinks:Set<res>, videoId, meta, timers, onAutoStop } */
 const sessions = new Map();
+let _starting = false;
 
 /* ---------------------------- Render-friendly PW --------------------------- */
 const CHROME_ARGS = [
@@ -357,6 +358,14 @@ function enrichAndFilter(raw, videoId) {
     default:
       return null;
   }
+}
+
+const API_KEY = process.env.PARSER_API_KEY || '';
+function requireKey(req, res, next) {
+  if (API_KEY && req.get('x-api-key') !== API_KEY) {
+    return res.status(401).json({ ok:false, error:'unauthorized' });
+  }
+  next();
 }
 
 /* ------------------------------- session core ------------------------------ */
@@ -900,10 +909,136 @@ async function startSession(url, idArg) {
   }
 }
 
+// Optional API key: set PARSER_API_KEY to require x-api-key header
+const API_KEY = (process.env.PARSER_API_KEY || '').trim();
+function requireApiKey(req, res, next) {
+  if (!API_KEY) return next();                          // open if no key set
+  const got = String(req.headers['x-api-key'] || '').trim();
+  if (got && got === API_KEY) return next();
+  return res.status(401).json({ error: 'unauthorized' });
+}
+
+/* Return the first active session (we only allow one via /parser API) */
+function firstActiveSession() {
+  for (const [id, s] of sessions) if (s.browser) return { id, s };
+  return null;
+}
+
+/* Cleanly stop & remove a session by id */
+async function cleanupAndDelete(id) {
+  const s = sessions.get(id);
+  if (!s) return;
+  try {
+    clearInterval(s.metaTimer);
+    clearInterval(s.watchdogTimer);
+    clearInterval(s.idleCheckTimer);
+    if (s.onAutoStop) app.off('autostop', s.onAutoStop);
+    await s.page?.close().catch(()=>{});
+    await s.context?.close?.().catch(()=>{});
+    await s.browser?.close()?.catch(()=>{});
+  } finally {
+    sessions.delete(id);
+  }
+}
+
+/* Start only if idle; supports force:true to replace current session */
+async function startUnique(url, { force = false } = {}) {
+  if (_starting) return { started:false, status:'starting_in_progress' };
+
+  const current = firstActiveSession();
+  if (current && !force) {
+    return {
+      started: false,
+      status: 'already_running',
+      sessionId: current.id,
+      videoId:   current.s.videoId,
+      meta:      current.s.meta || {}
+    };
+  }
+
+  if (current && force) await cleanupAndDelete(current.id);
+
+  _starting = true;
+  try {
+    const id = await startSessionDetached(url);
+    return { started:true, status:'started', sessionId:id };
+  } finally {
+    _starting = false;
+  }
+}
+
 /* ---------------------------------- routes --------------------------------- */
 function activeSessionCount() {
   return [...sessions.values()].filter(s => s.browser).length;
 }
+
+/* High-level control API for other apps */
+app.use('/parser', requireApiKey);
+
+/* Is the parser running? */
+app.get('/parser/active', requireKey, (_req, res) => {
+  const [id, s] = [...sessions.entries()].find(([,v]) => v.browser) || [];
+  if (!s) return res.json({ ok:true, status:'idle' });
+  res.json({
+    ok: true,
+    status: 'running',
+    sessionId: id,
+    videoId: s.videoId || null,
+    meta: s.meta || null
+  });
+});
+
+/* Start if idle (or force replace). Body: { url: "https://youtu.be/…", force?:true } */
+app.post('/parser/start', async (req, res) => {
+  try {
+    const { url, force = false } = req.body || {};
+    if (!url) return res.status(400).json({ ok:false, error:'missing_url' });
+    const out = await startUnique(url, { force: !!force });
+    res.json({ ok: out.started || out.status === 'already_running', ...out });
+  } catch (e) {
+    log.error('[POST /parser/start] error:', e);
+    res.status(500).json({ ok:false, error:'failed_to_start', reason: e?.message || String(e) });
+  }
+});
+
+/* Idempotent: ensure it’s running for this URL (never forces) */
+async function ensureParser(url) {
+  // is something already running?
+  const running = [...sessions.entries()].find(([,v]) => v.browser);
+  if (running) {
+    const [id, s] = running;
+    return { ok:true, started:false, status:'already_running', sessionId:id, videoId:s.videoId || null, meta:s.meta || null };
+  }
+  if (!url) return { ok:false, error:'missing_url' };
+
+  const sessionId = await startSessionDetached(url);
+  return { ok:true, started:true, status:'started', sessionId };
+}
+
+// POST body: { "url": "https://www.youtube.com/watch?v=..." }
+app.post('/parser/ensure', requireKey, async (req, res) => {
+  try {
+    console.log(new Date().toISOString(), '[POST /parser/ensure]', req.body);
+    const { url } = req.body || {};
+    const out = await ensureParser(url);
+    res.json(out);
+  } catch (e) {
+    console.error('[POST /parser/ensure] error:', e);
+    res.status(500).json({ ok:false, error:'ensure_failed', reason: String(e?.message || e) });
+  }
+});
+
+// GET /parser/ensure?url=...
+app.get('/parser/ensure', requireKey, async (req, res) => {
+  try {
+    console.log(new Date().toISOString(), '[GET /parser/ensure]', req.query);
+    const out = await ensureParser(req.query.url || '');
+    res.json(out);
+  } catch (e) {
+    console.error('[GET /parser/ensure] error:', e);
+    res.status(500).json({ ok:false, error:'ensure_failed', reason: String(e?.message || e) });
+  }
+});
 
 app.post('/start', async (req, res) => {
   if (activeSessionCount() >= 2) {

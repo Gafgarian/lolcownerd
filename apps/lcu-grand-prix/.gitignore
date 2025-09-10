@@ -1,3 +1,7 @@
+assets/js/oauth.json
+assets/js/token.json
+assets/js/oauth-desktop.json
+
 # Logs
 logs
 *.log
