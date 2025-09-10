@@ -32,26 +32,47 @@ app.use(cors({
 
 // JSON body for /api
 app.use(express.json());
-
-// Static
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-app.use('/viewer', express.static(path.join(__dirname, '../public/viewer')));
-app.use('/admin',  express.static(path.join(__dirname, '../public/admin')));
-// strong caching for assets (avatars, glass, sign, etc.)
-app.use('/assets', express.static(
-  path.join(__dirname, '../public/assets'),
-  { maxAge: '30d', immutable: true, etag: true }
-));
-
 // Engine (singleton)
 const engine = new ClickerEngine();
 
-// Routes
-app.use('/api/parser', parserRouter);
-app.use('/api/sse',   sseRoutes(engine));
-app.use('/api/admin', adminRoutes(engine));
-app.use('/api',       viewerRoutes());
+// Static
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+const ADMIN_PASS = process.env.ADMIN_PASS || '';
+
+function adminAuth(req, res, next) {
+  if (!ADMIN_PASS) return next(); // no password => open (dev)
+  const hdr = req.headers.authorization || '';
+  if (hdr.startsWith('Basic ')) {
+    try {
+      const [, pass=''] = Buffer.from(hdr.slice(6), 'base64').toString('utf8').split(':');
+      if (pass === ADMIN_PASS) return next();
+    } catch {}
+  }
+  res.set('WWW-Authenticate', 'Basic realm="Pour Decisions Admin", charset="UTF-8"');
+  res.status(401).send('Authentication required.');
+}
+
+// — Protect Admin UI (correct path; note ../public/admin)
+const ADMIN_DIR = path.join(__dirname, '../public/admin');
+app.use('/admin', adminAuth, express.static(ADMIN_DIR));
+app.get('/admin/*', adminAuth, (_req, res) => res.sendFile(path.join(ADMIN_DIR, 'index.html')));
+
+// — Protect Admin API & Admin SSE
+app.use('/api/admin', adminAuth);
+app.use('/api/sse/admin', adminAuth);
+
+// Static
+app.use('/viewer', express.static(path.join(__dirname, '../public/viewer')));
+app.use('/assets', express.static(path.join(__dirname, '../public/assets'), {
+  maxAge: '30d', immutable: true, etag: true
+}));
+
+// Routers (these come AFTER the guards above)
+app.use('/api/parser', parserRouter);
+app.use('/api/sse',   sseRoutes(engine));   // /api/sse/viewer is public; /api/sse/admin was guarded above
+app.use('/api/admin', adminRoutes(engine)); // already guarded above
+app.use('/api',       viewerRoutes());
 
 // Health & root
 app.get('/healthz', (_req, res) =>

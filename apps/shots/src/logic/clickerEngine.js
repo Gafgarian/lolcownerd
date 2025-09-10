@@ -22,6 +22,81 @@ const VIEWERS_INFLUENCE = 0.6;
 // tiny jitter to feel organic
 const JITTER_STD = 0.0025; // per second
 
+// ---------------------- ADDITIONAL HOST LOGIC
+const HOST_ORDER = [
+  { name: 'buff' },        // first
+  { name: 'batgirl' }       // second
+];
+
+// NEW: thresholds at which a NEW host joins based on the *average* drunkness
+// Start simple: only add the 2nd host at 50%.
+const JOIN_THRESHOLDS = [0.50 /*, 0.67, 0.75, 0.80 …*/];
+
+
+// Engine state
+let hosts = [
+  { name: HOST_ORDER[0].name, drunk: 0, frame: 0 }  // start with first host
+];
+let nextHostIdx = 1;                // points into HOST_ORDER for the next join
+let rr = 0;                         // round-robin pointer for shot assignment
+
+function averageDrunk() {
+  if (!hosts.length) return 0;
+  let sum = 0; for (const h of hosts) sum += h.drunk;
+  return sum / hosts.length;
+}
+
+// map drunk [0..1] → frame 0..7
+function frameForDrunk(p) {
+  const idx = Math.max(0, Math.min(7, Math.floor(p * 8))); // 8 frames
+  return idx;
+}
+
+// Call this after *any* drunkness change.
+function maybeJoinNewHost() {
+  if (nextHostIdx >= HOST_ORDER.length) return;
+  const need = JOIN_THRESHOLDS[Math.min(nextHostIdx - 1, JOIN_THRESHOLDS.length - 1)];
+  if (typeof need !== 'number') return;
+
+  if (averageDrunk() >= need) {
+    const spec = HOST_ORDER[nextHostIdx++];
+    hosts.push({ name: spec.name, drunk: 0, frame: 0 });
+    // No changes to existing drunk values; average naturally drops.
+  }
+}
+
+// Apply N “shots” to the engine
+function applyShots(n = 1) {
+  for (let i = 0; i < n; i++) {
+    if (!hosts.length) continue;
+    const idx = rr % hosts.length; rr++;
+    const h = hosts[idx];
+
+    // Choose how much one “shot” advances a host (tune as needed)
+    const STEP = 0.02; // 2% per shot (example)
+    h.drunk = Math.max(0, Math.min(1, h.drunk + STEP));
+    h.frame = frameForDrunk(h.drunk);
+  }
+  maybeJoinNewHost();
+}
+
+// expose to your existing engine’s public API
+export function engineSnapshot() {
+  const avg = averageDrunk();
+  return {
+    drunkPct: avg,               // keep legacy field but now it’s the average
+    totalShots, drunkPctHistory, // whatever else you already had
+    hosts: hosts.map(h => ({ name: h.name, drunk: h.drunk, frame: h.frame }))
+  };
+}
+
+export function onGiftOrShot(n) {
+  applyShots(n);
+  broadcast(engineSnapshot());   // however you publish SSE to viewer/admin
+}
+
+// END
+
 function weightedUnit(n) {
   const gamma = Math.max(RAND_GAMMA_MIN, RAND_GAMMA_BASE - (n / 50) * 0.25);
   return Math.pow(Math.random(), gamma);
@@ -61,6 +136,11 @@ export class ClickerEngine {
     this.drunkPct = 0;           // 0..100 derived
     this.maxDrunkPct = 0;
     this.shotRecord = 0;
+
+    this.hosts = [{ name: 'buff', drunk: 0 }];  // 0..1
+    this.nextHostIdx = 1;
+    this.hostOrder = ['buff', 'batgirl'];       // second folder name
+    this._rr = 0;   
 
     this.shotQueue = [];
     this.autoGift = null;
@@ -173,6 +253,7 @@ export class ClickerEngine {
       nextAchievement: this._nextAchievementMeta(),
       unlocked,           // <-- viewer can toast
       logs: this.getLogTail(120), // helpful for admin
+      hostsCount: this.hosts.length
     };
   }
 
@@ -289,19 +370,38 @@ export class ClickerEngine {
     if (reason === 'queue') this.shotQueue.shift();
     this.totalShots += 1;
     if (this.totalShots > this.shotRecord) this.shotRecord = this.totalShots;
-    this.drunkUnits += 1;
+
+    // one shot advances *drinker* by 1/500 (→ 100% == 500 shots)
+    const STEP = 1 / 500;
+    const i = this._rr % this.hosts.length; this._rr++;
+    this.hosts[i].drunk = Math.min(1, this.hosts[i].drunk + STEP);
+
+    // auto-join 2nd host the first time the average reaches 0.50
+    const avg = this.hosts.reduce((a, h) => a + h.drunk, 0) / this.hosts.length;
+    if (avg >= 0.50 && this.hosts.length === 1 && this.nextHostIdx < this.hostOrder.length) {
+      this.hosts.push({ name: this.hostOrder[this.nextHostIdx++], drunk: 0 });
+      // average naturally halves because we added a 0-drunk guest
+      this.log('Guest joined (host #2)');
+    }
+
     this._setDirty();
   }
 
   _applyDecay(dt) {
-    const viewers = this.viewers || VIEWERS_BASELINE;
-    const factor = (viewers / VIEWERS_BASELINE);
-    const k = DECAY_K_BASE * (1 + VIEWERS_INFLUENCE * (factor - 1));
-    const jitter = (Math.random() - 0.5) * JITTER_STD * dt * 2;
-    this.drunkUnits = Math.max(0, this.drunkUnits * Math.exp(-(k*dt)) + jitter);
+    const viewers = this.viewers || 300;
+    const factor = (viewers / 300);
+    const k = 0.000415 * (1 + 0.6 * (factor - 1));
+    const jitter = () => (Math.random() - 0.5) * 0.0025 * dt * 2;
 
+    // decay each host
+    for (const h of this.hosts) {
+      h.drunk = Math.max(0, h.drunk * Math.exp(-(k*dt)) + jitter());
+    }
+
+    // combined meter is the average
+    const avg = this.hosts.reduce((a, h) => a + h.drunk, 0) / this.hosts.length;
+    const pct = Math.max(0, Math.min(100, avg * 100));
     const old = this.drunkPct;
-    const pct = Math.max(0, Math.min(100, (this.drunkUnits / 500) * 100));
     this.drunkPct = pct;
     if (pct > this.maxDrunkPct) this.maxDrunkPct = pct;
     if (Math.abs(this.drunkPct - old) >= 0.2) this._setDirty();

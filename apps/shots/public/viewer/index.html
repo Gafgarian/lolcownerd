@@ -31,9 +31,8 @@
       <section class="left-stage">
         <!-- background & foreground -->
         <img class="bar-bg" src="/assets/bar-bg.png" alt="">
-        <div class="host-wrap">
-          <img id="hostImg" class="host" src="/assets/hosts/buff/avatar-1.png" alt="host">
-        </div>
+        <!-- host row (dynamic) -->
+        <div id="hostsRow" class="host-wrap"></div>
         <!-- the lane where shot glasses slide -->
         <div id="shotsLane" aria-hidden="true"></div>
         <!-- “TV” counter in the top-right, hanging on wall -->
@@ -55,6 +54,19 @@
         </aside>
 
         <img class="bar-fg" src="/assets/bar-fg.png" alt="">
+
+        <button id="achvBtn" class="achv-btn" aria-haspopup="dialog" title="Achievements">
+          <span class="trophy">🏆</span>
+        </button>
+
+        <div id="achvOverlay" class="achv-overlay" hidden>
+          <div id="achvModal" class="achv-modal" role="dialog" aria-modal="true" aria-labelledby="achvTitle">
+            <button id="achvClose" class="achv-close" aria-label="Close">✕</button>
+            <h2 id="achvTitle" style="margin:0 0 8px">Achievements</h2>
+            <div id="achvList" class="achv-grid"></div>
+            <div class="achv-footnote">Unlocked milestones will appear here during the stream.</div>
+          </div>
+        </div>
       </section>
     </main>
 

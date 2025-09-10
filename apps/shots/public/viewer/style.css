@@ -145,12 +145,26 @@ html,body{ margin:0; background:var(--bg); color:var(--fg); font-family:Inter, s
 
 /* host sits in front of shots, behind bar-fg */
 .host-wrap{
-  position:absolute; left:0; right:0%; bottom:0%;
-  height:70%;
+  position:absolute; left:0; right:0%; bottom:10%;
+  height:70%; gap: 32px; transition: gap .4s ease;
   display:flex; align-items:flex-end; justify-content:center;
   z-index:2;
 }
-.host{ max-height: 420px; width:auto; filter: drop-shadow(0 18px 30px rgba(0,0,0,0.55)); transition: transform .08s ease; }
+.host{ max-height: 420px; width:auto; filter: drop-shadow(0 18px 30px rgba(0,0,0,0.55)); transition: transform .65s cubic-bezier(.22,.61,.36,1), opacity .65s ease; }
+.host.enter{ transform: translateX(60px); opacity: 0; }
+.host.enter.active{
+  transform: translateX(0);
+  opacity: 1;
+}
+.host.make-space{
+  transform: translateX(-20px);
+}
+
+/* Host Custom Styling */
+.host--buff   { }
+.host--batgirl{ max-width: 20%; } 
+
+
 
 /* shot lane (glasses slide under host, over background) */
 #shotsLane{
