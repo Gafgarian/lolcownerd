@@ -8,6 +8,7 @@ import { ClickerEngine } from './logic/clickerEngine.js';
 import { sseRoutes } from './routes/sse.js';
 import { adminRoutes } from './routes/admin.js';
 import { viewerRoutes } from './routes/viewer.js';
+import parserRouter from './routes/parser.js';
 
 // --- app & config ---
 const app = express();
@@ -46,9 +47,11 @@ app.use('/assets', express.static(
 const engine = new ClickerEngine();
 
 // Routes
+app.use('/api/parser', parserRouter);
 app.use('/api/sse',   sseRoutes(engine));
 app.use('/api/admin', adminRoutes(engine));
 app.use('/api',       viewerRoutes());
+
 
 // Health & root
 app.get('/healthz', (_req, res) =>
@@ -66,7 +69,7 @@ app.use((err, _req, res, _next) => {
 
 // Start (after routes)
 const server = app.listen(PORT, () => {
-  console.log(`Pour Decisions running on :${PORT}`);
+  console.log(`Pour Decisions running on http://localhost:${PORT}`);
 });
 
 // Helpful diagnostics / SSE timeouts / graceful shutdown

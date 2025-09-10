@@ -179,6 +179,56 @@ function extractMembershipLevel(raw) {
   return m ? m[1].toLowerCase() : null;
 }
 
+function videoIdFromInput(input) {
+  try {
+    const u = new URL(input);
+    return u.searchParams.get('v') || u.pathname.split('/').filter(Boolean).pop();
+  } catch {
+    return String(input).trim();
+  }
+}
+
+function getActive() {
+  for (const [id, s] of sessions) {
+    if (s.browser) return { id, ...s };
+  }
+  return null;
+}
+
+async function stopSessionById(id) {
+  const s = sessions.get(id);
+  if (!s) return;
+  try {
+    clearInterval(s.metaTimer);
+    clearInterval(s.watchdogTimer);
+    clearInterval(s.idleCheckTimer);
+    if (s.onAutoStop) app.off('autostop', s.onAutoStop);
+    await s.page?.close().catch(()=>{});
+    await s.context?.close?.().catch(()=>{});
+    await s.browser?.close().catch(()=>{});
+  } finally {
+    sessions.delete(id);
+  }
+}
+
+async function hardStopSession(id) {
+  const s = sessions.get(id);
+  if (!s) return;
+
+  try {
+    clearInterval(s.metaTimer);
+    clearInterval(s.watchdogTimer);
+    clearInterval(s.idleCheckTimer);
+    if (s.onAutoStop) app.off('autostop', s.onAutoStop);
+  } catch {}
+
+  try { await s.page?.close().catch(()=>{}); } catch {}
+  try { await s.context?.close?.().catch(()=>{}); } catch {}
+  try { await s.browser?.close().catch(()=>{}); } catch {}
+
+  sessions.delete(id);
+}
+
 async function sbUpsertStream(videoId, title) {
   if (!sb) return null;
   const { data, error } = await sb
@@ -909,15 +959,6 @@ async function startSession(url, idArg) {
   }
 }
 
-// Optional API key: set PARSER_API_KEY to require x-api-key header
-const API_KEY = (process.env.PARSER_API_KEY || '').trim();
-function requireApiKey(req, res, next) {
-  if (!API_KEY) return next();                          // open if no key set
-  const got = String(req.headers['x-api-key'] || '').trim();
-  if (got && got === API_KEY) return next();
-  return res.status(401).json({ error: 'unauthorized' });
-}
-
 /* Return the first active session (we only allow one via /parser API) */
 function firstActiveSession() {
   for (const [id, s] of sessions) if (s.browser) return { id, s };
@@ -973,7 +1014,7 @@ function activeSessionCount() {
 }
 
 /* High-level control API for other apps */
-app.use('/parser', requireApiKey);
+app.use('/parser', requireKey);
 
 /* Is the parser running? */
 app.get('/parser/active', requireKey, (_req, res) => {
@@ -1016,15 +1057,44 @@ async function ensureParser(url) {
 }
 
 // POST body: { "url": "https://www.youtube.com/watch?v=..." }
-app.post('/parser/ensure', requireKey, async (req, res) => {
+app.post('/parser/ensure', async (req, res) => {
   try {
-    console.log(new Date().toISOString(), '[POST /parser/ensure]', req.body);
-    const { url } = req.body || {};
-    const out = await ensureParser(url);
-    res.json(out);
+    const { url, force = false } = req.body || {};
+    if (!url) return res.status(400).json({ ok:false, error:'missing_url' });
+
+    const { videoId } = toPopoutUrl(url);
+
+    // find any active session (we only allow one at a time)
+    const activeEntry = [...sessions.entries()].find(([, s]) => !!s.browser);
+    if (!activeEntry) {
+      const sessionId = await startSessionDetached(url);
+      return res.json({ ok:true, status:'started', sessionId, videoId });
+    }
+
+    const [runningId, running] = activeEntry;
+
+    if (running.videoId === videoId) {
+      return res.json({ ok:true, status:'running', sessionId: runningId, videoId });
+    }
+
+    if (force === true) {
+      log.info(`[POST /parser/ensure] force switch ${running.videoId} -> ${videoId}`);
+      await hardStopSession(runningId);
+
+      const sessionId = await startSessionDetached(url);
+      return res.json({ ok:true, status:'restarted', sessionId, videoId });
+    }
+
+    // different video but not forced
+    return res.status(409).json({
+      ok: false,
+      error: 'already_running',
+      videoIdRunning: running.videoId,
+      requested: videoId
+    });
   } catch (e) {
-    console.error('[POST /parser/ensure] error:', e);
-    res.status(500).json({ ok:false, error:'ensure_failed', reason: String(e?.message || e) });
+    log.error('[POST /parser/ensure] error:', e);
+    res.status(500).json({ ok:false, error:'ensure_failed', reason: e?.message || String(e) });
   }
 });
 
@@ -1037,6 +1107,25 @@ app.get('/parser/ensure', requireKey, async (req, res) => {
   } catch (e) {
     console.error('[GET /parser/ensure] error:', e);
     res.status(500).json({ ok:false, error:'ensure_failed', reason: String(e?.message || e) });
+  }
+});
+
+app.post('/parser/stop', requireKey, async (req, res) => {
+  const { sessionId } = req.body || {};
+  const active = getActive();
+  const id = sessionId || active?.id;
+  if (!id) return res.json({ ok:true, status:'no_active' });
+  await stopSessionById(id);
+  res.json({ ok:true, status:'stopped', sessionId: id });
+});
+
+app.post('/parser/stop/:id', async (req, res) => {
+  try {
+    await hardStopSession(req.params.id);
+    res.json({ ok:true });
+  } catch (e) {
+    log.error('[POST /parser/stop]', e);
+    res.status(500).json({ ok:false, error:'stop_failed', reason: e?.message || String(e) });
   }
 });
 
