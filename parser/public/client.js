@@ -209,11 +209,10 @@ function openEventStream(){
           }
         }
 
-        // ⬅️ NEW: accept server-merged maxViewers (seeded from Supabase) and display it
+        // accept server-merged maxViewers (seeded from Supabase)
         if (d.maxViewers !== undefined && d.maxViewers !== null && d.maxViewers !== '') {
           const mv = Number(d.maxViewers);
           if (Number.isFinite(mv) && mv >= 0 && mv !== maxViewers) {
-            // take the higher of local session high-water and server merged high-water
             maxViewers = Math.max(maxViewers, mv);
             if (maxViewersEl) maxViewersEl.textContent = maxViewers.toLocaleString();
           }
@@ -230,24 +229,29 @@ function openEventStream(){
       }
 
       if (d.type === 'superchat') {
+        // Stickers arrive as type=superchat with isSticker=true and message=ALT (from parser)
         totalSC += Number(d.amountFloat || 0);
         const tier = d.tier || 'blue';
         tierCounters[tier] = (tierCounters[tier] || 0) + 1;
         updateTotals();
 
+        const isSticker = !!d.isSticker;
         const primary = d.color || (d.colorVars && d.colorVars.primary) || null;
         const border  = (d.colorVars && d.colorVars.secondary) || primary;
         const textClr = pickTextColor(primary || '#0c1414');
         const cardStyle = primary ?
           `style="background:${primary}; color:${textClr}; border-color:${border || primary}; padding:8px 12px;"` :
           `style="padding:8px 12px"`;
-        const amountEl = `<span class="amount" style="font-weight:700; color:${textClr}; margin-left:8px;">${escapeHTML(d.amount || '$?')}</span>`;
-        const msgEl = d.message ? `<div class="msg-txt">${escapeHTML(d.message)}</div>` : '';
 
-        row(`<div class="row" ${cardStyle}>
+        const amountEl = `<span class="amount" style="font-weight:700; color:${textClr}; margin-left:8px;">${escapeHTML(d.amount || '$?')}</span>`;
+        const stickerBadge = isSticker ? `<span class="pill" style="margin-left:8px; padding:2px 6px; border-radius:6px; border:1px solid ${border || primary || '#666'}; color:${textClr}; font-size:12px;">Sticker</span>` : '';
+        const msgText = isSticker ? (d.message || 'Super Sticker') : (d.message || '');
+        const msgEl = msgText ? `<div class="msg-txt">${escapeHTML(msgText)}</div>` : '';
+
+        row(`<div class="row ${isSticker ? 'sticker' : ''}" ${cardStyle}>
                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
                  <span class="who" style="color:${textClr}; font-weight:600;">[${t}] ${escapeHTML(d.author)}</span>
-                 ${amountEl}
+                 ${amountEl}${stickerBadge}
                </div>
                ${msgEl}
              </div>`);

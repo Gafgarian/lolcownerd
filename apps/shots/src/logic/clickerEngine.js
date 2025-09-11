@@ -24,6 +24,9 @@ const VIEWERS_INFLUENCE = 0.6;
 // small organic jitter
 const JITTER_STD = 0.0025; // per second
 
+const AUTO_GIFT_DURATION_SCALE = 2;   // double the run time
+const AUTO_GIFT_RATE_SCALE     = 0.5; // half the shots/sec
+
 // Host order (match your /public/assets/hosts/* folders)
 const HOST_ORDER = ['buff', 'batgirl', 'stake'];  // extend freely
 
@@ -33,6 +36,10 @@ const JOIN_REARM_AT = 0.27;     // re-arm below 27% so you have to build back up
 
 // Delay before the first glass of any burst actually fires
 const SHOT_START_DELAY_MS = 1500;
+
+
+// NEW: extra spacing between *donation* shots (not auto-gift)
+const DONO_STAGGER_MS = 160;  
 
 // One “shot” is 1/500 of a personal bar
 const STEP_PER_SHOT = 1 / 500;
@@ -243,7 +250,9 @@ export class ClickerEngine {
   }
 
   // ---- internals -----------------------------------------------------------
-  _pickGiftRate() { return 4 + Math.random() * 3; } // [4,7)
+  _pickGiftRate() {
+    return (4 + Math.random() * 3) * AUTO_GIFT_RATE_SCALE;
+  }
 
   _applyOneShot(reason) {
     if (reason === 'queue') this.shotQueue.shift();
@@ -294,8 +303,18 @@ export class ClickerEngine {
   enqueueShots(count, reason) {
     const now = performance.now();
     const gate = now + SHOT_START_DELAY_MS;
-    for (let i = 0; i < count; i++) this.shotQueue.push(gate);
-    this.log(`+${count} shots (${reason}) ready @ +${(SHOT_START_DELAY_MS/1000).toFixed(1)}s`);
+
+    const isGiftLike = /gift/i.test(String(reason || ''));
+    const stagger    = isGiftLike ? 0 : DONO_STAGGER_MS;
+
+    for (let i = 0; i < count; i++) {
+      this.shotQueue.push(gate + i * stagger);
+    }
+
+    this.log(
+      `+${count} shots (${reason || 'queue'}) ready @ +${(SHOT_START_DELAY_MS/1000).toFixed(1)}s` +
+      (stagger ? ` (stagger ${stagger}ms)` : '')
+    );
     this._setDirty();
   }
 
@@ -305,13 +324,20 @@ export class ClickerEngine {
   }
   _extendAutoGift(seconds, label='gift') {
     const now = performance.now();
-    const ms = Math.max(1, seconds) * 1000;
+    const ms  = Math.max(1, seconds) * 1000 * AUTO_GIFT_DURATION_SCALE;
+
     if (this.autoGift) {
       this.autoGift.endsAt += ms;
-      this.log(`gift stack +${seconds}s (remaining ${(Math.max(0, this.autoGift.endsAt - now)/1000).toFixed(1)}s)`);
+      this.log(
+        `gift stack +${seconds}s (x${AUTO_GIFT_DURATION_SCALE} dur, ` +
+        `remaining ${(Math.max(0, this.autoGift.endsAt - now) / 1000).toFixed(1)}s)`
+      );
     } else {
       this.autoGift = { endsAt: now + ms, acc: 0, rate: this._pickGiftRate(), nextRateAt: now + 1000, label };
-      this.log(`gift start ${seconds}s @ ~${this.autoGift.rate.toFixed(2)}/s`);
+      this.log(
+        `gift start ${seconds}s (x${AUTO_GIFT_DURATION_SCALE} dur) ` +
+        `@ ~${this.autoGift.rate.toFixed(2)}/s`
+      );
     }
     this._setDirty();
   }

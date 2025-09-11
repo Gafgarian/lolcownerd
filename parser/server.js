@@ -44,11 +44,12 @@ const IGNORE_RX = [
   /Failed to get ServiceWorkerRegistration objects/i,
   /requestIdleCallback.*IdleRequestOptions/i,
   /A preload for .* is found, but is not used/i,
+  /ERR_QUIC_PROTOCOL_ERROR/i,
   /WebGL-0x/i, // GL driver spam
 ];
 
 const BENIGN_HOSTS_RX =
-  /(^|\.)ytimg\.com$|(^|\.)googlevideo\.com$|(^|\.)gstatic\.com$|(^|\.)google-analytics\.com$/i;
+  /(^|\.)ytimg\.com$|(^|\.)googlevideo\.com$|(^|\.)gstatic\.com$|(^|\.)google-analytics\.com$|(^|\.)signaler-pa\.youtube\.com$/i;
 
 const ABORTED_TYPES = new Set(['image','media','font','stylesheet','preload','prefetch','beacon']);
 
@@ -662,6 +663,8 @@ async function startSession(url, idArg) {
         const now = () => Date.now();
         window.__lastPushAt = now();
 
+
+        /* -------------------- deep query helpers (shadow DOM safe) -------------------- */
         function queryAllDeep(sel, root=document) {
           const out=[]; const seen=new Set(); const stack=[root];
           while (stack.length) {
@@ -675,6 +678,10 @@ async function startSession(url, idArg) {
         }
         const queryDeep = (sel, root=document) => queryAllDeep(sel, root)[0] || null;
         const deepText = (sel, scope=document) => { const el = queryDeep(sel, scope); return (el && (el.textContent||'').trim()) || ''; };
+        const deepAttr = (sel, attr, scope=document) => {
+          const el = queryDeep(sel, scope);
+          return (el && el.getAttribute && el.getAttribute(attr)) || '';
+        };
 
         function findItemsRoot() {
           const hosts = queryAllDeep('yt-live-chat-item-list-renderer');
@@ -686,6 +693,7 @@ async function startSession(url, idArg) {
           return queryDeep('#items') || queryDeep('#contents') || null;
         }
 
+        /* ----------------------------- batch publisher ----------------------------- */
         const q = [];
         let flushId = 0;
         const publish = (obj) => {
@@ -698,6 +706,7 @@ async function startSession(url, idArg) {
           }, 50);
         };
 
+        /* ----------------------------- parsers + keys ------------------------------ */
         const seen = new Set();
         function keyFor(n){
           const id =
@@ -713,12 +722,17 @@ async function startSession(url, idArg) {
             const v = k => (cs.getPropertyValue(k)||'').trim()||null;
             return {
               primary:v('--yt-live-chat-paid-message-primary-color'),
-              chipBg: v('--yt-live-chat-paid-sticker-chip-background-color')
+              chipBg: v('--yt-live-chat-paid-sticker-chip-background-color'),
+              stickerBg: v('--yt-live-chat-paid-sticker-background-color')
             };
           } catch { return {}; }
         }
+
+        /* ------------------------------ parser ------------------------------ */
         function parse(n){
           const tag = n.tagName?.toLowerCase(); if (!tag) return null;
+
+          // Super Chat (paid message)
           if (tag === 'yt-live-chat-paid-message-renderer') {
             const c = readColors(n);
             return { type:'superchat',
@@ -727,14 +741,44 @@ async function startSession(url, idArg) {
               message: deepText('#message', n),
               color: c.primary || null, colorVars: c, timestamp: now() };
           }
+          
+          // Super Sticker (paid sticker) – matches your provided DOM
           if (tag === 'yt-live-chat-paid-sticker-renderer') {
             const c = readColors(n);
-            return { type:'superchat',
-              author: deepText('#author-name', n),
-              amount: deepText('#purchase-amount, yt-formatted-string#purchase-amount, #amount', n),
-              message: 'Super Sticker',
-              color: c.primary || c.chipBg || null, colorVars: c, timestamp: now() };
+
+            // Amount lives in #price-column > #purchase-amount-chip
+            const amount =
+              deepText('#purchase-amount-chip, yt-formatted-string#purchase-amount-chip', n) ||
+              deepText('#purchase-amount, yt-formatted-string#purchase-amount', n) ||
+              deepText('#price-column', n) ||
+              deepText('#amount', n) ||
+              '';
+
+            // Sticker label is IMG alt under #sticker-container #sticker img#img
+            const alt =
+              deepAttr('#sticker-container yt-img-shadow#sticker img#img', 'alt', n) ||
+              deepAttr('#sticker-container #sticker img#img', 'alt', n) ||
+              deepAttr('#sticker-container #sticker img[alt]', 'alt', n) ||
+              deepAttr('#sticker img#img', 'alt', n) ||
+              deepAttr('#sticker img[alt]', 'alt', n) ||
+              deepAttr('img#img', 'alt', n) ||
+              deepAttr('img[alt]', 'alt', n) ||
+              '';
+
+            const message = alt ? (alt + ' Super Sticker') : 'Super Sticker';
+
+            return { type:'superchat',       
+              isSticker: true,         
+              author:  deepText('#author-name', n),
+              amount,
+              message,
+              color:   c.chipBg || c.stickerBg || c.primary || null,
+              colorVars: c,
+              timestamp: now()
+            };
           }
+
+          // New membership
           if (tag === 'yt-live-chat-membership-item-renderer') {
             return { type:'membership',
               author: deepText('#author-name', n),
@@ -742,6 +786,8 @@ async function startSession(url, idArg) {
               message: deepText('#message, #subtext, #secondary-text', n),
               timestamp: now() };
           }
+
+          // Gift batch
           if (tag === 'yt-live-chat-membership-gifting-event-renderer') {
             const body = (n.textContent||'').replace(/,/g,'');
             const m = body.match(/(?:sent\\s*)?(\\d+)\\D{0,80}(?:gift(?:ed)?\\s*)?memberships?/i)
@@ -751,18 +797,24 @@ async function startSession(url, idArg) {
               author: deepText('#author-name, #header-subtext, #primary-text', n) || 'Gift',
               count: m ? parseInt(m[1],10) : 1, message: body.trim(), timestamp: now() };
           }
+
+          // Milestone        
           if (tag === 'yt-live-chat-membership-milestone-message-renderer') {
             return { type:'milestone',
               author: deepText('#author-name', n),
               header: deepText('#header-subtext, #header, #primary-text', n),
               message: deepText('#message', n), timestamp: now() };
           }
+
+          // Plain chat
           if (tag === 'yt-live-chat-text-message-renderer') {
             return { type:'chat',
               author: deepText('#author-name', n),
               message: deepText('#message', n) || (n.textContent||'').trim(),
               timestamp: now() };
           }
+
+          // Sometimes gifts arrive as a header renderer
           if (tag === 'ytd-sponsorships-live-chat-header-renderer') {
             const primary = deepText('#primary-text', n);
             const body = (primary || (n.textContent || ''))
@@ -784,6 +836,7 @@ async function startSession(url, idArg) {
           }
           return null;
         }
+
         function sweep(root){
           if (!root) return 0;
           const sel = [
