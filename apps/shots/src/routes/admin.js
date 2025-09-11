@@ -1,148 +1,164 @@
+// src/routes/admin.js
 import express from 'express';
-import { extractVideoId } from '../util/youtube.js';
 
-// === Parser API config (via .env) ===
-const PARSER_ORIGIN = process.env.PARSER_ORIGIN || 'http://localhost:8080';
+// === Parser API config (.env) ===
+const PARSER_ORIGIN  = (process.env.PARSER_ORIGIN || 'http://localhost:8080').replace(/\/+$/,'');
 const PARSER_API_KEY = process.env.PARSER_API_KEY || '';
 
-// tiny fetch wrapper to hit the parser API
-async function parserFetch(path, opts = {}) {
-  const r = await fetch(`${PARSER_ORIGIN}${path}`, {
-    ...opts,
+// Small helpers
+async function pFetch(path, init = {}) {
+  return fetch(`${PARSER_ORIGIN}${path}`, {
+    ...init,
     headers: {
       'content-type': 'application/json',
       'x-api-key': PARSER_API_KEY,
-      ...(opts.headers || {})
+      ...(init.headers || {})
     }
   });
-  if (!r.ok) throw new Error(`${path} ${r.status}`);
-  return r.json();
 }
-
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-function videoIdFromInput(input) {
+function videoIdFromInput(input){
   try {
     const u = new URL(input);
-    return u.searchParams.get('v') || u.pathname.split('/').filter(Boolean).pop();
+    return u.searchParams.get('v') || u.pathname.split('/').filter(Boolean).pop() || '';
   } catch {
     return String(input).trim();
   }
 }
 
-// Poll the parser until it reports the wanted videoId as active (or timeout)
-async function waitUntilParserActive(videoId, timeoutMs = 30_000) {
+async function waitUntilParserActive(videoId, timeoutMs = 30_000){
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
-      const a = await parserFetch('/parser/active');
-      if (a?.status === 'running' && a?.videoId === videoId) return true;
-    } catch { /* parser not up yet */ }
+      const r = await pFetch('/parser/active');
+      const j = await r.json();
+      if (j?.status === 'running' && j?.videoId === videoId) return true;
+    } catch {}
     await sleep(1200);
   }
   return false;
 }
 
-// Bind engine to Supabase row by videoId, retrying briefly until the parser
-// has inserted/updated the row in Supabase.
-async function bindByVideoIdWithRetry(engine, videoId, tries = 12, delayMs = 1250) {
+async function bindByVideoIdWithRetry(engine, videoId, tries = 12, delayMs = 1250){
   let lastErr;
   for (let i = 0; i < tries; i++) {
     try {
       return await engine.bindByVideoId(videoId);
     } catch (e) {
       lastErr = e;
-      // only retry on “not found” style failures
-      const msg = String(e?.message || e);
-      if (!/No stream found/i.test(msg)) throw e;
+      if (!/No stream found/i.test(String(e?.message || e))) throw e;
       await sleep(delayMs);
     }
   }
   throw lastErr;
 }
 
-export function adminRoutes(engine) {
-  const r = express.Router();
+export function adminRoutes(engine){
+  const router = express.Router();
 
-  // ----- Bind (with parser coordination) -----
-  // body: { youtube: "<url or id>", forceSwitch?: boolean }
-  r.post('/bind', async (req, res, next) => {
+  // ----- Bind (coordinates with parser) -----
+  router.post('/bind', async (req, res, next) => {
     try {
       const { youtube: ytFromBody, url, forceSwitch } = req.body || {};
-      const youtube = ytFromBody || url;       // accept either key
+      const youtube = ytFromBody || url;
       if (!youtube) throw new Error('Missing YouTube URL or ID');
 
       const wantVid = videoIdFromInput(youtube);
 
-      // 1) Ask parser to ensure this stream is the active one
-      const ensure = await parserFetch('/parser/ensure', {
+      const ensureRes = await pFetch('/parser/ensure', {
         method: 'POST',
-        body: JSON.stringify({ url: youtube, forceSwitch: !!forceSwitch })
+        body: JSON.stringify({ url: youtube, force: !!forceSwitch })
       });
+      const ensure = await ensureRes.json();
 
-      // 2) If parser is running a *different* stream and the client didn’t
-      //    authorize switching yet, tell the client to prompt the user.
       if (ensure?.status === 'mismatch' && !forceSwitch) {
         return res.json({
           ok: false,
           code: 'parser_mismatch',
-          message: 'Parser is running a different stream.',
           currentVideoId: ensure.currentVideoId,
           meta: ensure.meta || {}
         });
       }
 
-      // 3) If we started or switched, wait until it’s actually active
       if (ensure?.status === 'started' || ensure?.status === 'switched') {
         const ok = await waitUntilParserActive(wantVid, 30_000);
-        if (!ok) return res.status(504).json({ ok: false, error: 'parser_not_ready' });
+        if (!ok) return res.status(504).json({ ok:false, error:'parser_not_ready' });
       }
 
-      // 4) Bind to Supabase by video id (retry briefly until the row exists)
       const bound = await bindByVideoIdWithRetry(engine, wantVid);
-      // start engine if not already running
       if (!engine.running) engine.start();
 
-      return res.json({ ok: true, bound, videoId: wantVid });
-    } catch (e) {
-      next(e);
-    }
+      res.json({ ok:true, bound, videoId: wantVid });
+    } catch (e) { next(e); }
+  });
+
+  // ----- Admin alias for a hard parser switch (stop + ensure) -----
+  router.post('/parser/switch', async (req, res, next) => {
+    try {
+      const { youtube, url } = req.body || {};
+      const target = youtube || url;
+      if (!target) return res.status(400).json({ ok:false, error:'missing_youtube' });
+
+      const h = { 'content-type':'application/json', 'x-api-key': PARSER_API_KEY };
+      await fetch(`${PARSER_ORIGIN}/parser/stop`, { method:'POST', headers:h }).catch(()=>{});
+      const r  = await fetch(`${PARSER_ORIGIN}/parser/ensure`, {
+        method: 'POST',
+        headers: h,
+        body: JSON.stringify({ url: target, force: true })
+      });
+      const j = await r.json().catch(()=>({}));
+      res.status(r.status).json(j);
+    } catch (e) { next(e); }
+  });
+
+  // ----- Reset everything (stop parser, stop engine, clear state) -----
+  router.post('/reset', async (_req, res) => {
+    try { await fetch(`${process.env.SELF_ORIGIN || ''}/api/parser/stop`, { method:'POST' }); } catch {}
+    try { engine.stop(); } catch {}
+    try { engine.resetAll(); } catch {}
+    engine.bound = null;
+    engine.logs = [];
+    try { engine.broadcast(); } catch {}
+    res.json({ ok:true });
   });
 
   // ----- Disconnect (snapshot + reset) -----
-  r.post('/disconnect', (req, res, next) => {
+  router.post('/disconnect', (req, res, next) => {
     try {
       engine.stop();
       const snapshot = engine.viewModel();
       engine.resetAll();
-      res.json({ ok: true, snapshot });
+      res.json({ ok:true, snapshot });
     } catch (e) { next(e); }
   });
 
-  // ----- Test helpers -----
-  r.post('/test/shot', (req, res, next) => {
+  // ----- Tests -----
+  router.post('/test/shot', (req, res, next) => {
     try {
       if (!engine.running) engine.start();
       const n = Math.max(1, Math.min(5000, Number(req.body?.n) || 1));
-      engine.testAddShots(n);
-      res.json({ ok: true, queued: n });
+      engine.start();
+      engine.testAddShots(Number(req.body?.n || 1), String(req.body?.author || 'Admin'));
+      res.json({ ok:true, queued:n });
     } catch (e) { next(e); }
   });
 
-  r.post('/test/gift', (req, res, next) => {
+  router.post('/test/gift', (req, res, next) => {
     try {
       if (!engine.running) engine.start();
       const seconds = Math.max(1, Math.min(3600, Number(req.body?.n) || 5));
-      engine.testGiftSeconds(seconds);
-      res.json({ ok: true, giftSeconds: seconds });
+      engine.start();
+      engine.testGiftSeconds(Number(req.body?.n || 5), String(req.body?.author || 'Admin'));
+      res.json({ ok:true, giftSeconds:seconds });
     } catch (e) { next(e); }
   });
 
-  // (optional) small pass-through to expose parser /active to the UI
-  r.get('/parser/active', async (_req, res) => {
-    try { res.json(await parserFetch('/parser/active')); }
-    catch { res.status(502).json({ ok: false, error: 'parser_unavailable' }); }
+  // optional: expose parser /active to admin UI through this router
+  router.get('/parser/active', async (_req, res) => {
+    try { const r = await pFetch('/parser/active'); const j = await r.json(); res.json(j); }
+    catch { res.status(502).json({ ok:false, error:'parser_unavailable' }); }
   });
 
-  return r;
+  return router;
 }

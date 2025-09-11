@@ -21,6 +21,11 @@ const PAGE_CONSOLE = (process.env.PAGE_CONSOLE || 'errors').toLowerCase(); // no
 const META_VERBOSE = process.env.META_VERBOSE === '1';
 const DEDUP_MS = +(process.env.LOG_DEDUP_MS || 15000);
 
+const WATCH_STALE_MS          = +(process.env.WATCH_STALE_MS || 60_000);   // 60s until we call it "stale"
+const WATCH_NUDGE_LIMIT       = +(process.env.WATCH_NUDGE_LIMIT || 3);     // nudges before hard refresh
+const WATCH_REFRESH_LIMIT     = +(process.env.WATCH_REFRESH_LIMIT || 2);   // hard refreshes before autostop
+const WATCH_AUTOSTOP_IDLE_MS  = +(process.env.WATCH_AUTOSTOP_IDLE_MS || 10 * 60_000); // 10m hard limit
+
 const ts = () => new Date().toISOString();
 const should = lvl => lvl <= LOG_LEVEL;
 
@@ -449,7 +454,15 @@ async function startSession(url, idArg) {
     sessions.set(id, {
       browser, context, page,
       sinks: (sessions.get(id)?.sinks) || new Set(),
-      videoId, meta: { title: undefined, viewers: undefined, maxViewers: 0 },
+      videoId,
+      meta: { title: undefined, viewers: undefined, maxViewers: 0 },
+
+      // watchdog state
+      lastEventAt: Date.now(),   // last time we saw *any* parsed chat/gift/SC event
+      nudges: 0,
+      refreshes: 0,
+      refreshing: false,
+
       metaTimer: null, metaBusy: false,
       watchdogTimer: null, idleCheckTimer: null, onAutoStop: null
     });
@@ -501,6 +514,14 @@ async function startSession(url, idArg) {
     const push = (payload) => {
       const s = sessions.get(id);
       if (!s) return;
+
+      // mark “we received something” for watchdog
+      if (payload && payload.type && payload.type !== 'status') {
+        s.lastEventAt = Date.now();
+        s.nudges = 0;       // success resets the escalation counters
+        s.refreshes = 0;
+      }
+
       const line = `data: ${JSON.stringify(payload)}\n\n`;
       for (const sink of s.sinks) sink.write(line);
     };
@@ -567,20 +588,67 @@ async function startSession(url, idArg) {
     /* ------------------------------ watchdog nudge ------------------------------ */
     const wd = setInterval(async () => {
       try {
-        const lastInPage = await page.evaluate(() => window.__lastPushAt || 0);
-        const stale = Date.now() - Math.max(lastChatAt, lastInPage);
-        if (stale > 30000) {
-          slog(id, 'watchdog: stale chat, nudging page');
-          await page.evaluate(() => {
-            window.dispatchEvent(new Event('yt-navigate-finish'));
-            const e = document.querySelector('yt-live-chat-app') || document.body;
-            if (e && e.scrollTo) e.scrollTo(0, 1e9);
-          });
+        const s = sessions.get(id);
+        if (!s) return;
+
+        const lastInPage = await page.evaluate(() => window.__lastPushAt || 0).catch(() => 0);
+        const lastSeen   = Math.max(s.lastEventAt || 0, lastInPage || 0);
+        const now        = Date.now();
+        const staleFor   = now - lastSeen;
+
+        // Hard guard: no events for too long → auto-stop
+        if (staleFor >= WATCH_AUTOSTOP_IDLE_MS) {
+          slog(id, `watchdog: no events for ${Math.round(staleFor/1000)}s → autostop`);
+          app.emit('autostop', id);
+          return;
         }
+
+        // Not yet “stale” – nothing to do
+        if (staleFor < WATCH_STALE_MS) return;
+
+        // 1) gentle nudge, a few times
+        if (s.nudges < WATCH_NUDGE_LIMIT) {
+          s.nudges += 1;
+          slog(id, `watchdog: stale ${Math.round(staleFor/1000)}s, nudge ${s.nudges}/${WATCH_NUDGE_LIMIT}`);
+          await page.evaluate(() => {
+            try {
+              window.dispatchEvent(new Event('yt-navigate-finish'));
+              const e = document.querySelector('yt-live-chat-app') || document.body;
+              if (e && e.scrollTo) e.scrollTo(0, 1e9);
+            } catch {}
+          }).catch(()=>{});
+          return;
+        }
+
+        // 2) hard refresh the chat page, a couple of times
+        if (s.refreshes < WATCH_REFRESH_LIMIT && !s.refreshing) {
+          s.refreshing = true;
+          s.refreshes += 1;
+          s.nudges = 0;
+          slog(id, `watchdog: hard refresh ${s.refreshes}/${WATCH_REFRESH_LIMIT}`);
+
+          try {
+            // reopen live (fallback to replay), re-inject observer
+            await page.goto(live, { waitUntil: 'domcontentloaded', timeout: 45_000 })
+              .catch(() => page.goto(replay, { waitUntil: 'domcontentloaded', timeout: 45_000 }));
+            await clickConsentIfPresent(page);
+            await page.waitForSelector('yt-live-chat-app, yt-live-chat-renderer', { timeout: 45_000 }).catch(()=>{});
+            await injectObserver();
+          } catch (e) {
+            slog(id, 'watchdog refresh error', String(e?.message || e));
+          } finally {
+            s.refreshing = false;
+          }
+          return;
+        }
+
+        // 3) still nothing? give up → auto-stop
+        slog(id, `watchdog: stale persists after ${WATCH_NUDGE_LIMIT} nudges + ${WATCH_REFRESH_LIMIT} refreshes → autostop`);
+        app.emit('autostop', id);
       } catch (e) {
         slog(id, 'watchdog error', String(e?.message || e));
       }
-    }, 10000);
+    }, 10_000);
     const sWD = sessions.get(id); if (sWD) sWD.watchdogTimer = wd;
 
     /* ------------------------------ chat observer ------------------------------ */
@@ -1108,6 +1176,22 @@ app.get('/parser/ensure', requireKey, async (req, res) => {
     console.error('[GET /parser/ensure] error:', e);
     res.status(500).json({ ok:false, error:'ensure_failed', reason: String(e?.message || e) });
   }
+});
+
+app.get('/status/:id', (req, res) => {
+  const s = sessions.get(req.params.id);
+  if (!s || !s.browser) {
+    return res.json({ live: false, status: 'no_session' });
+  }
+  const last = Math.max(s.lastEventAt || 0, (s.meta?.at || 0));
+  const staleForMs = Date.now() - last;
+  const live = staleForMs < WATCH_STALE_MS;
+  res.json({
+    live,
+    status: 'running',
+    videoId: s.videoId,
+    staleForMs
+  });
 });
 
 app.post('/parser/stop', requireKey, async (req, res) => {

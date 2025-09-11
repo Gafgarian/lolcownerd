@@ -7,12 +7,10 @@ export function sseRoutes(engine) {
   // one place to open an SSE stream
   function openSSE(req, res) {
     // 1) headers once
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',  // avoid proxies & compression
-      'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no'                   // nginx: disable buffering
-    });
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
 
     // 2) send a quick comment so the client considers the stream "open"
     res.write(':\n\n');

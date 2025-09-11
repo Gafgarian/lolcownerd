@@ -70,8 +70,8 @@ app.use('/assets', express.static(path.join(__dirname, '../public/assets'), {
 
 // Routers (these come AFTER the guards above)
 app.use('/api/parser', parserRouter);
-app.use('/api/sse',   sseRoutes(engine));   // /api/sse/viewer is public; /api/sse/admin was guarded above
-app.use('/api/admin', adminRoutes(engine)); // already guarded above
+app.use('/api/sse',   sseRoutes(engine));   
+app.use('/api/admin', adminRoutes(engine)); 
 app.use('/api',       viewerRoutes());
 
 // Health & root

@@ -29,7 +29,7 @@ const cRed    = document.getElementById('cRed');
 let es = null, sessionId = null, currentVideoId = null;
 
 // reconnection state
-const MAX_RECONNECTS = 3;
+const MAX_RECONNECTS = 4;
 let reconnectAttempts = 0;
 let reconnectTimer = null;
 
