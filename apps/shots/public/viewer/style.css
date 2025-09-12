@@ -375,7 +375,6 @@ body.modal-open{ overflow: hidden; }
 @font-face { font-family:'UrbanSlash';      src: url('/assets/fonts/Urban Slash.otf') format('opentype');       font-display: swap; }
 @font-face { font-family:'VTKSSMASH';       src: url('/assets/fonts/VTKS SMASH.ttf') format('truetype');        font-display: swap; }
 @font-face { font-family:'08Underground';       src: url('/assets/fonts/08_Underground.otf') format('opentype');        font-display: swap; }
-@font-face { font-family:'CapConstruct';       src: url('/assets/fonts/CapConstruct.otf') format('opentype');        font-display: swap; }
 @font-face { font-family:'Captions';       src: url('/assets/fonts/Captions.otf') format('opentype');        font-display: swap; }
 @font-face { font-family:'PaintCans';       src: url('/assets/fonts/PaintCans.otf') format('opentype');        font-display: swap; }
 @font-face { font-family:'Scrawler_3rd';       src: url('/assets/fonts/Scrawler_3rd.otf') format('opentype');        font-display: swap; }
@@ -411,3 +410,84 @@ body.modal-open{ overflow: hidden; }
 .g-pig{   font-size: 2.5em; color:#ffb3fd; text-shadow: 0 0 6px rgba(255,179,253,.25); }
 
 /* === Graffiti Wall END (Viewer) === */
+
+
+/* ---------- GOAL BAR (front of the bar) ---------- */
+#goalBar{
+  position:absolute;
+  left:50%;
+  transform: translateX(-50%);
+  bottom: 82px;                 /* tune once; this sits on the bar-wood */
+  width: min(50vw, 50%);        /* 50% scene width */
+  z-index: 30;                  /* ABOVE the bar front image */
+  pointer-events:none;
+  display:none;                 /* off until a goal exists */
+}
+
+/* title above bar */
+.goal-title{
+  position:absolute;
+  left:0;
+  right:0;
+  top:-28px;
+  text-align:center;
+  font: 700 14px/1.2 ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;
+  color:#d8e8ff;
+  text-shadow: 0 1px 0 rgba(0,0,0,.65), 0 2px 6px rgba(0,0,0,.65);
+  letter-spacing:.02em;
+}
+
+/* fraction to the left of bar */
+.goal-fraction{
+  position:absolute;
+  left:-90px;
+  top:50%;
+  transform: translateY(-50%);
+  width:80px;
+  text-align:right;
+  font: 700 16px/1 ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;
+  color:#e6f0ff;
+  text-shadow: 0 2px 4px rgba(0,0,0,.6);
+}
+
+/* track + fill */
+.goal-track{
+  position:relative;
+  height: 14px;
+  border-radius: 10px;
+  overflow:hidden;
+  background: linear-gradient(#1d2733,#121820);
+  box-shadow:
+     inset 0 1px 0 rgba(255,255,255,.06),
+     inset 0 -2px 6px rgba(0,0,0,.55),
+     0 8px 18px rgba(0,0,0,.35);
+  border: 1px solid rgba(255,255,255,.08);
+  backdrop-filter: blur(1px);
+}
+
+.goal-fill{
+  height:100%;
+  width:0%;
+  border-radius: inherit;
+  background: var(--goalColor,#5cc08c);
+  background-image: linear-gradient(transparent, rgba(0,0,0,.15));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.25),
+    inset 0 -2px 4px rgba(0,0,0,.18);
+  transition: width .25s ease;
+}
+
+/* color tokens (YT tiers, plus gifting) */
+:root{
+  --goal-blue:    #1e88e5;
+  --goal-lblue:   #64b5f6;
+  --goal-green:   #00c853;
+  --goal-yellow:  #ffeb3b;
+  --goal-orange:  #ff9800;
+  --goal-pink:    #ec407a;
+  --goal-red:     #ef5350;
+  --goal-gift:    #8bc34a;   /* lighter forest green */
+}
+
+/* ensure toast stays above goal bar */
+.toast{ z-index: 99; }

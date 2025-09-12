@@ -427,7 +427,7 @@ export class ClickerEngine {
       if (row.type === 'superchat') {
         const shots = (COLOR_TO_SHOTS[row.tier] ?? 0) | 0;
         if (shots > 0) {
-          this.enqueueShots(shots, `poll by ${name}`);
+          this.enqueueShots(shots, `SC[${row.tier}] +${shots} shots (poll) by ${name}`);
           this._noteShout(name);
         }
       } else if (row.type === 'gift') {

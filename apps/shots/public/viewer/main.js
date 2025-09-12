@@ -64,7 +64,7 @@ function putShot(im){ if (shotPool.length < POOL_SIZE) shotPool.push(im); }
 const GRAFFITI_FONTS = [
   'Bitreco','Digitag','FragileBombersA','FragileBombersD','Grafipaint',
   'HoaxVandal','MarkerQueen','StreetToxicDemo','UrbanSlash','VTKSSMASH',
-  '08Underground','CapConstruct','Captions','PaintCans','Scrawler_3rd','Sprayerz','StencilDamage'
+  '08Underground','Captions','PaintCans','Scrawler_3rd','Sprayerz','StencilDamage'
 ];
 
 // Where the admin writes; keep primary key but accept legacy keys/shapes too
@@ -328,8 +328,8 @@ function layoutGraffiti(items){
 
   // Bands to avoid lights/sign (top) and counter (bottom)
   const PAD_L = 40, PAD_R = 40;
-  const TOP_BAND = 0.28;   // ~20% from top
-  const BOT_BAND = 0.18;   // ~17% from bottom
+  const TOP_BAND = 0.15;   // ~20% from top
+  const BOT_BAND = 0.17;   // ~17% from bottom
   const padTop = Math.round(stageRect.height * TOP_BAND);
   const padBot = Math.round(stageRect.height * BOT_BAND);
 
@@ -340,8 +340,8 @@ function layoutGraffiti(items){
     w: Math.round(stageRect.width  * 0.28),
     h: Math.round(stageRect.height * 0.22)
   };
-  const NOTCH_PAD_X = 16;
-  const NOTCH_PAD_Y = 12;
+  const NOTCH_PAD_X = 24;
+  const NOTCH_PAD_Y = 36;
 
   // Two safe zones: right of the sign, and below the sign (left block)
   const safeZones = [];
@@ -466,7 +466,57 @@ window.addEventListener('storage', (e) => {
 window.addEventListener('resize', () => layoutGraffiti(readGW()));
 // === Graffiti Wall END (Viewer - layout) ==================
 
+// ---------- Goal: UI + render ----------
+const goalEl = document.getElementById('goalBar') || (() => {
+  const d = document.createElement('div'); d.id = 'goalBar'; barScene.appendChild(d); return d;
+})();
+goalEl.innerHTML = `
+  <div class="goal-title"></div>
+  <div class="goal-fraction"></div>
+  <div class="goal-track"><div class="goal-fill"></div></div>
+`;
+const goalTitleEl = goalEl.querySelector('.goal-title');
+const goalFracEl  = goalEl.querySelector('.goal-fraction');
+const goalFillEl  = goalEl.querySelector('.goal-fill');
 
+function readGoal(){
+  try { return JSON.parse(localStorage.getItem('pd.goal')||'null'); } catch { return null; }
+}
+function colorForTier(tier, mode){
+  if (mode === 'gifting') return getComputedStyle(document.documentElement).getPropertyValue('--goal-gift') || '#8bc34a';
+  const map = {
+    blue:'--goal-blue', lblue:'--goal-lblue', green:'--goal-green',
+    yellow:'--goal-yellow', orange:'--goal-orange', pink:'--goal-pink', red:'--goal-red'
+  };
+  const varName = map[tier] || '--goal-blue';
+  return getComputedStyle(document.documentElement).getPropertyValue(varName) || '#1e88e5';
+}
+function renderGoal(){
+  const g = readGoal();
+  if (!g) { goalEl.style.display = 'none'; return; }
+  // Normalize legacy shapes
+  const mode = g.mode || (g.kind === 'gift' ? 'gifting' : 'superchat');
+  const enabled = (g.enabled !== false); // treat missing as enabled
+  const target  = Math.max(0, Number(g.target || 0));
+  if (!enabled || !target) { goalEl.style.display = 'none'; return; }
+
+  const done = Math.max(0, Math.min(target, (g.progress|0)));
+  const pct  = Math.max(0, Math.min(100, (done / target) * 100));
+
+  goalTitleEl.textContent = g.title || (mode==='gifting' ? 'Gifted memberships' : 'Superchat goal');
+  goalFracEl.textContent  = `${done}/${target}`;
+  goalFillEl.style.width  = pct.toFixed(2) + '%';
+  const col = colorForTier(g.tier || 'blue', mode);
+  goalEl.style.setProperty('--goalColor', col.trim() || '#5cc08c');
+  goalEl.style.display = 'block';
+}
+renderGoal();
+
+// watch for admin updates
+window.addEventListener('storage', (e)=>{
+  if (e.key === 'pd.graffiti' || e.key === 'pd.members' || e.key === 'pd.gw') layoutGraffiti(readGW());
+  if (e.key === 'pd.goal') renderGoal();
+});
 
 // --- SSE hookup (server drives truth; we only animate the DELTA)
 (function connect(){

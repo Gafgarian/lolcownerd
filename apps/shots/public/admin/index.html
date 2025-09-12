@@ -8,9 +8,18 @@
   </head>
   <body>
     <div class="wrap">
+      <!-- Header -->
       <div class="panel headerbar">
         <img src="../assets/bar-sign.png" alt="Pour Decisions" class="logo">
         <span class="title">Pour Decisions – Admin</span>
+
+        <!-- mini stats -->
+        <div class="header-stats">
+          <div><span>Total shots</span><b id="hTotal">0</b></div>
+          <div><span>Drunk %</span><b id="hPct">0%</b></div>
+          <div><span>Record shots</span><b id="hRecord">0</b></div>
+          <div><span>Max %</span><b id="hMax">0%</b></div>
+        </div>
       </div>
 
       <!-- Bind / Disconnect -->
@@ -30,7 +39,7 @@
           <input id="n" type="number" value="5" min="1" max="5000" class="input" />
           <button id="shot" class="btn">+ Shot(s)</button>
           <button id="gift" class="btn">+ Auto Shot (secs)</button>
-          <button id="resetAll" class="danger">Reset</button>
+          <button id="resetAll" class="btn danger">Reset</button>
           <p class="subtle">Use these to simulate donos without touching Supabase.</p>
         </div>
       </div>
@@ -48,27 +57,84 @@
 
       <div class="panel">
         <div>Logs</div>
-        <div class="mono queue" id="logs"></div>
+        <div class="mono queue fixed" id="logs"></div>
       </div>
 
       <!-- Members (Graffiti Wall) -->
-      <div class="panel" id="gwPanel">
-        <div class="row" style="align-items:center; gap:10px;">
-          <div class="muted">Members (Graffiti Wall)</div>
-        </div>
-
-        <div class="row" style="gap:8px; margin-top:8px;">
-          <input id="gwName" class="input" placeholder="Type names… (comma-separated OK)" />
+      <div class="panel">
+        <div class="panel-title">Members (Graffiti Wall)</div>
+        <div class="gw-row">
+          <input id="gwName" class="input" placeholder="Type a name… (comma-separated OK)" />
           <button id="gwAdd" class="btn">+ Add</button>
           <button id="gwClear" class="btn btn--ghost">Clear All</button>
         </div>
-
-        <div id="gwList" class="gw-list" aria-live="polite"></div>
+        <div class="gw-scroll">
+          <div id="gwList" class="gw-list"></div>
+        </div>
       </div>
 
+      <!-- Goal -->
+      <div class="panel" id="goalPanel">
+        <div class="panel-title">Goal</div>
 
+        <div class="goal-form">
+          <input id="gTitle" class="input" placeholder="What is the goal for? (editable anytime)" />
 
+          <!-- Toggle: Superchat vs Member gifting -->
+          <div class="goal-kind">
+            <label class="switch">
+              <input id="gMode" type="checkbox" />
+              <span class="slider"></span>
+            </label>
+            <span class="muted" id="gModeLabel">Superchat</span>
+          </div>
+
+          <!-- Inline config row -->
+          <div class="goal-row-compact">
+            <!-- Tier (only when Superchat) OR 'Total gifts' label (when gifting) -->
+            <label id="gTierWrap">
+              <span class="muted">Tier</span>
+              <select id="gTier" class="input">
+                <option value="blue">Blue</option>
+                <option value="lblue">Light Blue</option>
+                <option value="green">Green</option>
+                <option value="yellow">Yellow</option>
+                <option value="orange">Orange</option>
+                <option value="pink">Pink</option>
+                <option value="red">Red</option>
+                <option value="any">Any</option>
+              </select>
+            </label>
+
+            <!-- <label id="gGiftsLabel" class="hidden"><span class="muted">Total gifts</span></label> -->
+
+            <label>
+              <span class="muted">Count</span>
+              <input id="gCount" class="input small" type="number" min="1" value="10" />
+            </label>
+
+            <div class="goal-actions">
+              <button id="gSave" class="btn primary">Save / Update</button>
+              <button id="gManual" class="btn btn--ghost">+1 (manual)</button>
+              <button id="gDelete" class="btn danger">Delete goal</button>
+            </div>
+          </div>
+
+          <!-- Preview -->
+          <div id="prevWrap" class="goal-preview" hidden>
+            <div class="goal-title" id="prevTitle"></div>
+            <div class="goal-wrap">
+              <div class="goal-row">
+                <div class="goal-count" id="prevFrac">0/0</div>
+                <div class="goal-meter"><div class="goal-fill" id="prevFill"></div></div>
+              </div>
+            </div>
+            <div class="subtle">Manual adds and test shots never affect real shots logic.</div>
+          </div>
+        </div>
+      </div>
     </div>
+
     <script type="module" src="./main.js"></script>
   </body>
 </html>
