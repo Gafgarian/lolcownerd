@@ -39,6 +39,8 @@ HOSTS_META.flatMap(h => HOST_FRAMES(h.dir)).forEach(src => { const im = new Imag
 
 // --- helpers / math
 const clamp100 = x => Math.max(0, Math.min(100, x));
+const rand   = (min, max) => Math.random() * (max - min) + min;
+const choice = (arr) => arr[(Math.random() * arr.length) | 0];
 
 // pool for reusing <img class="shot">
 const POOL_SIZE = 24;
@@ -56,6 +58,57 @@ function putShot(im){ if (shotPool.length < POOL_SIZE) shotPool.push(im); }
   if (rec) shotRecEl.textContent = String(Number(rec));
   if (max) drunkTopEl.textContent = `${clamp100(Number(max)).toFixed(0)}%`;
 })();
+
+
+// === Graffiti Wall START (Viewer) =========================
+const GRAFFITI_FONTS = [
+  'Bitreco','Digitag','FragileBombersA','FragileBombersD','Grafipaint',
+  'HoaxVandal','MarkerQueen','StreetToxicDemo','UrbanSlash','VTKSSMASH',
+  '08Underground','CapConstruct','Captions','PaintCans','Scrawler_3rd','Sprayerz','StencilDamage'
+];
+
+// Where the admin writes; keep primary key but accept legacy keys/shapes too
+const GW_KEY  = 'pd.graffiti';
+const GW_KEYS = [GW_KEY, 'pd.members', 'pd.gw'];
+function readGW() {
+  for (const k of GW_KEYS) {
+    const raw = localStorage.getItem(k);
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw);
+      // Accept array OR {items:[...]} OR {list:[...]}
+      const arr = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.items)
+          ? parsed.items
+          : Array.isArray(parsed?.list)
+            ? parsed.list
+            : null;
+      if (arr) {
+        // Normalize shape -> {name, crown}
+        return arr
+          .map(x => ({
+            name: String(x?.name ?? x?.n ?? '').trim(),
+            crown: !!(x?.crown ?? x?.isCrown ?? x?.king),
+          }))
+          .filter(x => x.name.length);
+      }
+    } catch {}
+  }
+  return [];
+}
+
+const graffitiLayer = document.createElement('div');
+graffitiLayer.className = 'graffiti-layer';
+const barFg = document.querySelector('.bar-fg');
+if (barFg?.parentElement) {
+  // ensure paint sits ON the wall (above bg, below fg)
+  barFg.parentElement.insertBefore(graffitiLayer, barFg);
+} else {
+  document.querySelector('.left-stage').appendChild(graffitiLayer);
+}
+// === Graffiti Wall END (Viewer) ===========================
+
 
 // Host factory
 function makeHost(meta, initiallyHidden = false, side = '') {
@@ -259,6 +312,161 @@ function resetViewerLocal() {
   hosts[0].pct = 0;
   updateHostsView();
 }
+
+// === Graffiti Wall START (Viewer - layout) ================
+function layoutGraffiti(items){
+  graffitiLayer.innerHTML = '';
+  if (!items || !items.length) return;
+
+  // Sort: crowns first (big), then by length (desc)
+  const sorted = [...items].sort((a,b)=>{
+    if (a.crown !== b.crown) return a.crown ? -1 : 1;
+    return (b.name?.length||0) - (a.name?.length||0);
+  });
+
+  const stageRect = barScene.getBoundingClientRect();
+
+  // Bands to avoid lights/sign (top) and counter (bottom)
+  const PAD_L = 40, PAD_R = 40;
+  const TOP_BAND = 0.28;   // ~20% from top
+  const BOT_BAND = 0.18;   // ~17% from bottom
+  const padTop = Math.round(stageRect.height * TOP_BAND);
+  const padBot = Math.round(stageRect.height * BOT_BAND);
+
+  // Notch where the sign is (tweak if you move/resize the art)
+  const notch = {
+    x: Math.round(stageRect.width  * 0.06),
+    y: Math.round(stageRect.height * 0.08),
+    w: Math.round(stageRect.width  * 0.28),
+    h: Math.round(stageRect.height * 0.22)
+  };
+  const NOTCH_PAD_X = 16;
+  const NOTCH_PAD_Y = 12;
+
+  // Two safe zones: right of the sign, and below the sign (left block)
+  const safeZones = [];
+  const rightX = Math.max(PAD_L, notch.x + notch.w + NOTCH_PAD_X);
+  const safeRight = {
+    x: rightX,
+    y: padTop,
+    w: Math.max(0, stageRect.width - PAD_R - rightX),
+    h: Math.max(0, stageRect.height - padTop - padBot)
+  };
+  if (safeRight.w > 40 && safeRight.h > 24) safeZones.push(safeRight);
+
+  const belowY = notch.y + notch.h + NOTCH_PAD_Y;
+  const safeBelow = {
+    x: PAD_L,
+    y: belowY,
+    w: Math.max(0, notch.x + notch.w - PAD_L),
+    h: Math.max(0, stageRect.height - padBot - belowY)
+  };
+  if (safeBelow.w > 40 && safeBelow.h > 24) safeZones.push(safeBelow);
+
+  // Collision helpers
+  const intersects = (a, b) =>
+    !(a.x + a.w < b.x || b.x + b.w < a.x || a.y + a.h < b.y || b.y + b.h < a.y);
+  const inflate = (r, p) => ({ x: r.x - p, y: r.y - p, w: r.w + 2*p, h: r.h + 2*p });
+
+  const taken = [];
+  const MAX_TRIES = 120;       // more than before
+  const GRID = 8;              // light grid snap helps reduce near-misses
+  const ROT_TWEAK = 8;         // degrees to try if a rotation helps fit
+  const MIN_SHRINK = 0.85;     // pigs can shrink down to 85% if needed
+
+  for (const it of sorted){
+    // Build tag element first so we can measure real rotated bounds
+    const tag = document.createElement('span');
+    tag.className = `g-tag ${it.crown ? 'g-crown' : 'g-pig'}`;
+    tag.style.fontFamily = `'${choice(GRAFFITI_FONTS)}', sans-serif`;
+    tag.textContent = it.name;
+
+    // Size/rotation
+    let baseSize = it.crown ? 6 : rand(2, 3); // crowns in em, pigs in rem
+    let sizeUnit = it.crown ? 'em' : 'rem';
+    let rot = rand(-18, 18);
+
+    let placed = false;
+    let shrink = 1.0;
+
+    for (let attempt = 0; attempt < 3 && !placed; attempt++){
+      // On subsequent attempts, shrink pigs a bit if needed
+      const factor = attempt === 0 ? 1 : Math.max(MIN_SHRINK, 1 - attempt * 0.07);
+      shrink = it.crown ? 1 : factor;
+
+      tag.style.fontSize = `${(baseSize * shrink).toFixed(2)}${sizeUnit}`;
+      tag.style.transform = `rotate(${rot.toFixed(1)}deg)`;
+      graffitiLayer.appendChild(tag);
+
+      // Measure the axis-aligned post-transform bounding box
+      const box = tag.getBoundingClientRect();
+      const w = box.width, h = box.height;
+
+      // Keep-out pad scales with height (more glow => larger pad)
+      const PAD = Math.max(10, Math.round(h * (it.crown ? 0.24 : 0.18)));
+
+      // Try many random positions (with a small grid snap)
+      for (let t = 0; t < MAX_TRIES && !placed; t++){
+        const zone = choice(safeZones);
+        if (!zone) break;
+
+        const x = Math.round(rand(zone.x, Math.max(zone.x, zone.x + zone.w - w)) / GRID) * GRID;
+        const y = Math.round(rand(zone.y, Math.max(zone.y, zone.y + zone.h - h)) / GRID) * GRID;
+
+        const rect = { x, y, w, h };
+        const grown = inflate(rect, PAD);
+
+        if (!taken.some(r => intersects(grown, r))){
+          tag.style.left = `${x}px`;
+          tag.style.top  = `${y}px`;
+          taken.push(grown);
+          placed = true;
+          break;
+        }
+
+        // If we collide and we're near the end of tries, nudge rotation to seek a new bbox
+        if (t === (MAX_TRIES >> 1) || t === (MAX_TRIES - 1)){
+          rot = Math.max(-24, Math.min(24, rot + (Math.random()<0.5?-ROT_TWEAK:ROT_TWEAK)));
+          tag.style.transform = `rotate(${rot.toFixed(1)}deg)`;
+          // re-measure after rotation tweak
+          const b2 = tag.getBoundingClientRect();
+          rect.w = b2.width; rect.h = b2.height;
+        }
+      }
+
+      if (!placed){
+        // This attempt failed: remove the tag and try a smaller one (for pigs)
+        graffitiLayer.removeChild(tag);
+      }
+    }
+
+    if (!placed){
+      // Fallback: tuck along lower safe zone edge without collisions if possible
+      const z = safeZones[0] || { x: PAD_L, y: padTop, w: stageRect.width - PAD_L - PAD_R, h: stageRect.height - padTop - padBot };
+      tag.style.left = `${z.x + (taken.length * 14) % Math.max(80, z.w - 160)}px`;
+      tag.style.top  = `${z.y + Math.max(0, z.h - (tag.getBoundingClientRect().height || 0) - 12)}px`;
+      // Still push an inflated rect so later items avoid it
+      const bb = tag.getBoundingClientRect();
+      taken.push(inflate({ x: parseFloat(tag.style.left), y: parseFloat(tag.style.top), w: bb.width, h: bb.height }, 12));
+      graffitiLayer.appendChild(tag);
+    }
+  }
+}
+
+// hydrate on first load
+layoutGraffiti(readGW());
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => layoutGraffiti(readGW()));
+}
+
+// live updates from Admin tab
+window.addEventListener('storage', (e) => {
+  if (GW_KEYS.includes(e.key)) layoutGraffiti(readGW());
+});
+window.addEventListener('resize', () => layoutGraffiti(readGW()));
+// === Graffiti Wall END (Viewer - layout) ==================
+
+
 
 // --- SSE hookup (server drives truth; we only animate the DELTA)
 (function connect(){

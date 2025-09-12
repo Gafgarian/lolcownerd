@@ -36,3 +36,41 @@ input:focus, button:focus { outline:2px solid #2b5ea8; outline-offset:2px; }
 
 .danger{ background:#3b0f13; border:1px solid #7a2a30; color:#ffd7d9; }
 .danger:hover{ filter:brightness(1.05); }
+
+/* --- Graffiti admin list --- */
+.gw-list{
+  margin-top: 12px;
+  column-gap: 12px;
+  /* auto columns; tweak for wider screens via media queries if you like */
+  columns: 1;
+}
+@media (min-width: 900px){ .gw-list { columns: 2; } }
+@media (min-width: 1200px){ .gw-list { columns: 3; } }
+
+.gw-chip{
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin: 6px 10px 6px 0;
+  border-radius: 10px;
+  background: #0d1420;
+  border: 1px solid #2a344d;
+  break-inside: avoid;
+}
+
+.gw-chip .name{ font-weight: 600; }
+.gw-chip .kind{
+  cursor: pointer;
+  width: 26px; height: 26px;
+  display:grid; place-items:center;
+  border-radius: 8px;
+  background:#141c2a;
+  border:1px solid #2a344d;
+}
+.gw-chip .kill{
+  cursor:pointer;
+  opacity:.8;
+  transition:opacity .15s ease;
+}
+.gw-chip .kill:hover{ opacity:1; }

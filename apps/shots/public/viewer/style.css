@@ -359,3 +359,55 @@ body.modal-open{ overflow: hidden; }
 }
 .shout.right{ right:2%; left:auto; transform:translateX(18px); }
 .shout.show{ transform:translateX(0); opacity:1; transition:transform .25s ease, opacity .25s ease; }
+
+
+
+/* === Graffiti Wall START (Viewer) === */
+/* Load a few of your spray fonts */
+@font-face { font-family:'Bitreco';         src: url('/assets/fonts/Bitreco.ttf') format('truetype');       font-display: swap; }
+@font-face { font-family:'Digitag';         src: url('/assets/fonts/Digitag.ttf') format('truetype');       font-display: swap; }
+@font-face { font-family:'FragileBombersA'; src: url('/assets/fonts/Fragile Bombers Attack.otf') format('opentype'); font-display: swap; }
+@font-face { font-family:'FragileBombersD'; src: url('/assets/fonts/Fragile Bombers Down.otf') format('opentype'); font-display: swap; }
+@font-face { font-family:'Grafipaint';      src: url('/assets/fonts/Grafipaint.ttf') format('truetype');       font-display: swap; }
+@font-face { font-family:'HoaxVandal';      src: url('/assets/fonts/Hoax Vandal.ttf') format('truetype');       font-display: swap; }
+@font-face { font-family:'MarkerQueen';     src: url('/assets/fonts/MarkerQueen.ttf') format('truetype');       font-display: swap; }
+@font-face { font-family:'StreetToxicDemo'; src: url('/assets/fonts/StreetToxicDemo.otf') format('opentype');       font-display: swap; }
+@font-face { font-family:'UrbanSlash';      src: url('/assets/fonts/Urban Slash.otf') format('opentype');       font-display: swap; }
+@font-face { font-family:'VTKSSMASH';       src: url('/assets/fonts/VTKS SMASH.ttf') format('truetype');        font-display: swap; }
+@font-face { font-family:'08Underground';       src: url('/assets/fonts/08_Underground.otf') format('opentype');        font-display: swap; }
+@font-face { font-family:'CapConstruct';       src: url('/assets/fonts/CapConstruct.otf') format('opentype');        font-display: swap; }
+@font-face { font-family:'Captions';       src: url('/assets/fonts/Captions.otf') format('opentype');        font-display: swap; }
+@font-face { font-family:'PaintCans';       src: url('/assets/fonts/PaintCans.otf') format('opentype');        font-display: swap; }
+@font-face { font-family:'Scrawler_3rd';       src: url('/assets/fonts/Scrawler_3rd.otf') format('opentype');        font-display: swap; }
+@font-face { font-family:'Sprayerz';       src: url('/assets/fonts/Sprayerz.otf') format('opentype');        font-display: swap; }
+@font-face { font-family:'StencilDamage';       src: url('/assets/fonts/Stencil_Damage.otf') format('opentype');        font-display: swap; }
+
+.graffiti-layer{
+  position:absolute; inset:0;
+  z-index:1;                 /* behind hosts (z=2) and shots (z=10) */
+  pointer-events:none;
+}
+
+/* “spray” look: blur + halos + a hint of drip */
+.g-tag{
+  position:absolute; margin:0; white-space:nowrap; transform-origin:50% 50%;
+  filter:
+    drop-shadow(0 0 1px rgba(0,0,0,.55))
+    blur(0.2px);
+  opacity:.92;
+}
+.g-tag::after{            /* soft overspray glow */
+  content:'';
+  position:absolute; inset:-4px;
+  filter: blur(14px);
+  background: currentColor;
+  opacity:.18;
+  z-index:-1;
+}
+.graffiti-layer .g-tag { transform-origin: 50% 50%; }
+/* crown paint colour gets goldish */
+.g-crown{   font-size: 6em; color:#ffd34d; text-shadow: 0 0 6px rgba(255,211,77,.35); letter-spacing: .5px; }
+/* paypig paint palette defaults to off-white */
+.g-pig{   font-size: 2.5em; color:#ffb3fd; text-shadow: 0 0 6px rgba(255,179,253,.25); }
+
+/* === Graffiti Wall END (Viewer) === */

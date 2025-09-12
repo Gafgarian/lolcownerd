@@ -50,6 +50,24 @@
         <div>Logs</div>
         <div class="mono queue" id="logs"></div>
       </div>
+
+      <!-- Members (Graffiti Wall) -->
+      <div class="panel" id="gwPanel">
+        <div class="row" style="align-items:center; gap:10px;">
+          <div class="muted">Members (Graffiti Wall)</div>
+        </div>
+
+        <div class="row" style="gap:8px; margin-top:8px;">
+          <input id="gwName" class="input" placeholder="Type names… (comma-separated OK)" />
+          <button id="gwAdd" class="btn">+ Add</button>
+          <button id="gwClear" class="btn btn--ghost">Clear All</button>
+        </div>
+
+        <div id="gwList" class="gw-list" aria-live="polite"></div>
+      </div>
+
+
+
     </div>
     <script type="module" src="./main.js"></script>
   </body>
