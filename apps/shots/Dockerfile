@@ -14,13 +14,13 @@ RUN yarn install --frozen-lockfile --production=true
 COPY . .
 
 # Make sure data dir exists & is owned by the non-root user
-RUN mkdir -p /app/data && chown -R node:node /app
+RUN mkdir -p /data && chown -R node:node /data
 
 # Drop privileges
 USER node
 
 ENV NODE_ENV=production
-ENV DATA_DIR=/app/data
+ENV DATA_DIR=/data
 
 EXPOSE 8090
 CMD ["node", "src/server.js"]
