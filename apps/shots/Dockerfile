@@ -20,7 +20,7 @@ RUN mkdir -p /data && chown -R node:node /data
 USER node
 
 ENV NODE_ENV=production
-ENV DATA_DIR=/data
+ENV DATA_DIR=./data
 
 EXPOSE 8090
 CMD ["node", "src/server.js"]
