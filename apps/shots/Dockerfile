@@ -1,16 +1,19 @@
+# Dockerfile
 FROM node:22-alpine
 
-# App dir
+# Yarn is provided via Corepack in Node 22
+RUN corepack enable
+
 WORKDIR /app
 
-# Install deps
-COPY package*.json ./
-RUN npm ci --only=production
+# Install prod deps using Yarn (classic)
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile --production=true
 
-# Copy source
+# Copy the rest
 COPY . .
 
-# Make data dir and app tree writable by the non-root 'node' user
+# Make sure data dir exists & is owned by the non-root user
 RUN mkdir -p /app/data && chown -R node:node /app
 
 # Drop privileges
