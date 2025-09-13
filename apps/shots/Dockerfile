@@ -24,4 +24,4 @@ USER app
 EXPOSE 8090
 
 # Start the server
-CMD ["node", "server/server.js"]
+CMD ["node", "src/server.js"]
