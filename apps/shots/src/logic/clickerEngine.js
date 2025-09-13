@@ -1,4 +1,6 @@
-// src/logic/clickerEngine.js
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { supabase } from '../db/supabase.js';
 import {
   COLOR_TO_SHOTS,
@@ -9,11 +11,35 @@ import {
   RAND_GAMMA_BASE,
   RAND_GAMMA_MIN,
 } from '../rules.js';
-import fs from 'fs';
-import path from 'path';
 
-const ACH_PATH = path.resolve(process.cwd(), 'data/achievements.json');
-const ACHIEVEMENTS = JSON.parse(fs.readFileSync(ACH_PATH, 'utf-8'));
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const BUNDLED_ACH_PATH = path.join(__dirname, '../data/achievements.json');
+
+
+function loadAchievements() {
+  const candidates = [
+    process.env.ACHIEVEMENTS_PATH,                                // explicit override
+    path.resolve(process.cwd(), 'data/achievements.json'),        // runtime override in /app/data
+    BUNDLED_ACH_PATH,                                             // bundled with source
+  ].filter(Boolean);
+
+  for (const p of candidates) {
+    try {
+      const txt = fs.readFileSync(p, 'utf8');
+      const arr = JSON.parse(txt);
+      if (Array.isArray(arr) && arr.length) return arr;
+    } catch {}
+  }
+
+  // Last-ditch fallback so we never crash
+  return [
+    { threshold: 5,  name: 'First Pour Problems', emoji: '🍺' },
+    { threshold: 10, name: 'Happy Accident',      emoji: '🍀' },
+    { threshold: 25, name: 'Shot Namers',         emoji: '🥃' },
+  ];
+}
+
+const ACHIEVEMENTS = loadAchievements();
 
 // ===== Tuning =====
 const DECAY_K_BASE = 0.000415;
