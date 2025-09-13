@@ -1,27 +1,23 @@
-# syntax=docker/dockerfile:1
+FROM node:22-alpine
 
-FROM node:20-alpine AS base
+# App dir
 WORKDIR /app
-RUN mkdir -p /app/data && chown -R node:node /app
-USER node
 
-# Set production by default; override at runtime if needed
-ENV NODE_ENV=production
+# Install deps
+COPY package*.json ./
+RUN npm ci --only=production
 
-# Install dependencies with Yarn (classic)
-# If you don't have a yarn.lock yet, this still works.
-COPY package.json yarn.lock* ./
-RUN yarn install --production --frozen-lockfile || yarn install --production
-
-# Copy the app source (server + client assets)
+# Copy source
 COPY . .
 
-# Use non-root for a bit of extra safety
-RUN addgroup -S app && adduser -S app -G app
-USER app
+# Make data dir and app tree writable by the non-root 'node' user
+RUN mkdir -p /app/data && chown -R node:node /app
 
-# The server listens on 8080 by default in your code; expose it
+# Drop privileges
+USER node
+
+ENV NODE_ENV=production
+ENV DATA_DIR=/app/data
+
 EXPOSE 8090
-
-# Start the server
 CMD ["node", "src/server.js"]
