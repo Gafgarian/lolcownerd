@@ -2,6 +2,8 @@
 
 FROM node:20-alpine AS base
 WORKDIR /app
+RUN mkdir -p /app/data && chown -R node:node /app
+USER node
 
 # Set production by default; override at runtime if needed
 ENV NODE_ENV=production

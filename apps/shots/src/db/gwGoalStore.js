@@ -1,3 +1,4 @@
+import os from 'os';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -29,6 +30,39 @@ export function createGwGoalStore({ dataDir }) {
   async function load() {
     try { graffiti = JSON.parse(await fs.readFile(fGraffiti, 'utf8')); } catch {}
     try { goal     = JSON.parse(await fs.readFile(fGoal,     'utf8')); } catch {}
+  }
+
+  async function safeWrite(dest, json) {
+    const payload = JSON.stringify(json, null, 2);
+    const dir = path.dirname(dest);
+    const tmp = dest + '.tmp';
+
+    try {
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(tmp, payload);
+      await fs.rename(tmp, dest);
+      return;
+    } catch (e) {
+      // Clean tmp if it exists
+      try { await fs.unlink(tmp); } catch {}
+
+      if (e && e.code === 'EACCES') {
+        // Fallback to OS temp so the app keeps running
+        const fallbackDir = path.join(os.tmpdir(), 'pd-data');
+        const alt = path.join(fallbackDir, path.basename(dest));
+        try {
+          await fs.mkdir(fallbackDir, { recursive: true });
+          await fs.writeFile(alt, payload);
+          console.warn(`[gwGoalStore] DATA_DIR not writable (${dest}); wrote to ${alt}`);
+          return;
+        } catch (e2) {
+          console.error('[gwGoalStore] fallback write failed:', e2);
+        }
+      } else {
+        console.error('[gwGoalStore] persist failed:', e);
+      }
+      // At this point we keep in-memory state but don’t crash the server
+    }
   }
 
   function setGraffiti(items = []) {

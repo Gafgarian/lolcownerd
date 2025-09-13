@@ -16,7 +16,9 @@ const app  = express();
 const PORT = process.env.PORT || 8090;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR  = path.join(__dirname, '../data');
+const DATA_DIR = path.resolve(
+  process.env.DATA_DIR || path.join(__dirname, '../data')
+);
 
 const origins = (process.env.ALLOWED_ORIGINS || '')
   .split(',').map(s => s.trim()).filter(Boolean);
