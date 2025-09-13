@@ -16,32 +16,21 @@ const ACH_PATH = path.resolve(process.cwd(), 'data/achievements.json');
 const ACHIEVEMENTS = JSON.parse(fs.readFileSync(ACH_PATH, 'utf-8'));
 
 // ===== Tuning =====
-// Decay: e^{-k*7200}≈0.05 → k≈0.000415
 const DECAY_K_BASE = 0.000415;
-// viewer influence: 300 = neutral; >300 faster; <300 slower
 const VIEWERS_BASELINE = 300;
 const VIEWERS_INFLUENCE = 0.6;
-// small organic jitter
-const JITTER_STD = 0.0025; // per second
+const JITTER_STD = 0.0025;
 
-const AUTO_GIFT_DURATION_SCALE = 2;   // double the run time
-const AUTO_GIFT_RATE_SCALE     = 0.5; // half the shots/sec
+const AUTO_GIFT_DURATION_SCALE = 2;
+const AUTO_GIFT_RATE_SCALE     = 0.5;
 
-// Host order (match your /public/assets/hosts/* folders)
-const HOST_ORDER = ['buff', 'batgirl', 'stake'];  // extend freely
+const HOST_ORDER = ['buff', 'batgirl', 'stake'];
 
-// Average needed to invite next host (one-at-a-time, with hysteresis)
-const JOIN_AT = 0.30;           // 30%
-const JOIN_REARM_AT = 0.27;     // re-arm below 27% so you have to build back up
+const JOIN_AT = 0.30;
+const JOIN_REARM_AT = 0.27;
 
-// Delay before the first glass of any burst actually fires
 const SHOT_START_DELAY_MS = 1500;
-
-
-// NEW: extra spacing between *donation* shots (not auto-gift)
-const DONO_STAGGER_MS = 160;  
-
-// One “shot” is 1/500 of a personal bar
+const DONO_STAGGER_MS = 160;
 const STEP_PER_SHOT = 1 / 500;
 
 // ===== Helpers =====
@@ -66,7 +55,7 @@ function makeGiftSchedule(n) {
   const schedule = [];
   for (let i = 0; i < total; i++) {
     const t = now + (i / total) * durationMs;
-    const jitter = (Math.random() - 0.5) * 0.2 * (durationMs / total); // ±10%
+    const jitter = (Math.random() - 0.5) * 0.2 * (durationMs / total);
     const ts = Math.min(now + durationMs, Math.max(now, t + jitter));
     schedule.push(ts);
   }
@@ -76,26 +65,29 @@ function makeGiftSchedule(n) {
 
 // ===== Engine =====
 export class ClickerEngine {
-  constructor() {
+  /**
+   * @param {{ onEventForGoal?: (evt:{type:string, tier?:string, gift_count?:number})=>void }} [opts]
+   */
+  constructor(opts = {}) {
     this.bound = null;
     this.lastSeenAt = null;
 
     // Aggregate state
     this.totalShots = 0;
-    this.drunkPct = 0;         // average drunk (0..100)
-    this.drunkUnits = 0;       // legacy; not used for meter now
+    this.drunkPct = 0;
+    this.drunkUnits = 0;
     this.maxDrunkPct = 0;
     this.shotRecord = 0;
 
-    // Per-host state (0..1 drunk)
+    // Per-host state
     this.hostOrder = HOST_ORDER.slice();
     this.hosts = [{ name: this.hostOrder[0], drunk: 0 }];
     this.nextHostIdx = 1;
     this._rr = 0;
-    this._joinArmed = true;    // allow a join on first rise past JOIN_AT
+    this._joinArmed = true;
 
     // Queues / timers
-    this.shotQueue = [];       // array of timestamps when each shot is allowed to fire
+    this.shotQueue = [];
     this.autoGift = null;
 
     // Misc
@@ -114,11 +106,16 @@ export class ClickerEngine {
     this.pendingShout = null;
     this._shout = null;
     this._shoutSeq = 0;
+    this._shoutUntil = 0;
+    this._shoutTTLms = 2500;
 
     // Broadcast throttle
     this.dirty = true;
     this.lastBroadcast = 0;
     this.broadcastHz = 6;
+
+    // Goal advancement hook
+    this._goalHook = typeof opts.onEventForGoal === 'function' ? opts.onEventForGoal : null;
   }
 
   // ---- utils ---------------------------------------------------------------
@@ -132,7 +129,8 @@ export class ClickerEngine {
   _noteShout(name) {
     if (!name) return;
     this._shout = { name: String(name).slice(0, 64), seq: ++this._shoutSeq };
-    this._setDirty();           // make sure a payload goes out immediately
+    this._shoutUntil = performance.now() + this._shoutTTLms;
+    this._setDirty();
   }
   log(msg) {
     const line = `[${new Date().toISOString()}] ${msg}`;
@@ -153,7 +151,6 @@ export class ClickerEngine {
     this.maxDrunkPct = 0;
     this.shotRecord = 0;
 
-    // hosts back to one, fresh join arm
     this.hosts = [{ name: this.hostOrder[0], drunk: 0 }];
     this.nextHostIdx = 1;
     this._rr = 0;
@@ -178,27 +175,22 @@ export class ClickerEngine {
     if (this.running) return;
     this.running = true;
 
-    // poll Supabase
     this.pollHandle = setInterval(() =>
       this.pollOnce().catch(e => this.log(`poll error: ${e.message}`)),
       2000);
 
-    // viewers snapshot every 5s
     this.viewersHandle = setInterval(() =>
       this.fetchViewers().catch(()=>{}),
       5000);
 
-    // main tick @ 20Hz
     let lastTs = performance.now();
     this.tickHandle = setInterval(() => {
       const now = performance.now();
       const dt = (now - lastTs) / 1000; lastTs = now;
 
-      // drain gated queue at ~10/s
       const perSec = 10;
       const perTick = perSec * dt;
 
-      // count how many are ready to fire (past gate)
       let readyHead = 0;
       while (readyHead < this.shotQueue.length && this.shotQueue[readyHead] <= now) readyHead++;
 
@@ -206,7 +198,6 @@ export class ClickerEngine {
       this._carry = (perTick + (this._carry || 0)) - toFire;
       while (toFire-- > 0) this._applyOneShot('queue');
 
-      // gifted auto: randomized 4–7/s, stacks
       if (this.autoGift) {
         if (now >= this.autoGift.nextRateAt) {
           this.autoGift.rate = this._pickGiftRate();
@@ -226,13 +217,8 @@ export class ClickerEngine {
         }
       }
 
-      // decay & join logic
       this._applyDecay(dt);
-
-      // achievements
       this._checkAchievements();
-
-      // broadcast
       this.broadcast();
     }, 50);
 
@@ -259,19 +245,16 @@ export class ClickerEngine {
     this.totalShots += 1;
     if (this.totalShots > this.shotRecord) this.shotRecord = this.totalShots;
 
-    // assign to next drinker (round-robin)
     const i = this._rr % this.hosts.length; this._rr++;
     const h = this.hosts[i];
     h.drunk = clamp01(h.drunk + STEP_PER_SHOT);
 
-    // join logic: one host at a time when avg >= 30%, then wait until avg < 27% to re-arm
     let avg = this._avgHostDrunk();
     if (this._joinArmed && this.nextHostIdx < this.hostOrder.length && avg >= JOIN_AT) {
       const name = this.hostOrder[this.nextHostIdx++];
       this.hosts.push({ name, drunk: 0 });
-      this._joinArmed = false;   // disarm until we fall below JOIN_REARM_AT
+      this._joinArmed = false;
       this.log(`Guest joined (${this.hosts.length}/${this.hostOrder.length}): ${name}`);
-      // recalc average after join (it will drop)
       avg = this._avgHostDrunk();
     }
 
@@ -294,7 +277,6 @@ export class ClickerEngine {
     this.drunkPct = pct;
     if (pct > this.maxDrunkPct) this.maxDrunkPct = pct;
 
-    // re-arm join when average falls below threshold
     if (!this._joinArmed && avg < JOIN_REARM_AT) this._joinArmed = true;
 
     if (Math.abs(this.drunkPct - old) >= 0.2) this._setDirty();
@@ -371,7 +353,6 @@ export class ClickerEngine {
   async bindByVideoId(videoId) {
     if (!videoId) throw new Error('videoId required');
 
-    // 1) Lookup stream
     const { data: stream, error: err1 } = await supabase
       .from('streams')
       .select('id, video_id, title')
@@ -381,7 +362,6 @@ export class ClickerEngine {
     if (err1) throw new Error(`streams lookup failed: ${err1.message}`);
     if (!stream) throw new Error(`No stream found for video_id=${videoId}`);
 
-    // 2) Tail watermark (only new events)
     const { data: tail, error: err2 } = await supabase
       .from('interaction_events_v')
       .select('id, at')
@@ -394,7 +374,6 @@ export class ClickerEngine {
     this.watermark = { id: last ? last.id : 0, at: last ? last.at : null };
     if (this.processedIds) this.processedIds.clear(); else this.processedIds = new Set();
 
-    // 3) Bind
     this.bound = { stream_id: stream.id, video_id: stream.video_id, title: stream.title };
     this.lastSeenAt = null;
     this._setDirty();
@@ -422,7 +401,7 @@ export class ClickerEngine {
       if (this.processedIds.has(row.id)) continue;
       this.processedIds.add(row.id);
 
-      const name = row.author || 'Anon';
+      const name = row.author || 'NDF Anon';
 
       if (row.type === 'superchat') {
         const shots = (COLOR_TO_SHOTS[row.tier] ?? 0) | 0;
@@ -435,7 +414,18 @@ export class ClickerEngine {
         this.scheduleGift(`gift-${row.id}`, n, `poll by ${name}`);
         this._noteShout(name);
       } else if (row.type === 'membership') {
-        // optional: tiny auto here if desired
+        // optional: ignore
+      }
+
+      // NEW: notify goal store on every donor event
+      if (this._goalHook) {
+        try {
+          this._goalHook({
+            type: row.type,
+            tier: row.tier,
+            gift_count: row.gift_count|0
+          });
+        } catch {} // never break the poll loop
       }
 
       this.watermark.id = row.id;
@@ -445,7 +435,6 @@ export class ClickerEngine {
 
   // ---- API surface used by routes -----------------------------------------
   broadcast() {
-    // throttle + send only when dirty
     const now = performance.now();
     const period = 1000 / this.broadcastHz;
     if (!this.dirty && (now - this.lastBroadcast) < period) return;
@@ -458,15 +447,13 @@ export class ClickerEngine {
 
   viewModel() {
     const now = performance.now();
+    const shout = (this._shout && now <= this._shoutUntil) ? this._shout : null;
+    if (this._shout && now > this._shoutUntil) this._shout = null;
+
     const active = this.autoGift ? 1 : 0;
     const nextEnd = this.autoGift ? this.autoGift.endsAt : null;
     const nextEta = nextEnd ? Math.max(0, nextEnd - now) : null;
-
-    // one-shot pops
-    const unlocked = this.pendingAchievement;
-    this.pendingAchievement = null;
-    const shout = this._shout;
-    this._shout = null;
+    const unlocked = this.pendingAchievement; this.pendingAchievement = null;
 
     return {
       bound: this.bound,

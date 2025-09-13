@@ -27,9 +27,9 @@ const gwAdd   = document.getElementById('gwAdd');
 const gwList  = document.getElementById('gwList');
 const gwClear = document.getElementById('gwClear');
 
-/* ---- Goal DOM (compact toggle layout) ---- */
+/* ---- Goal DOM ---- */
 const gTitle   = document.getElementById('gTitle');
-const gMode    = document.getElementById('gMode');        // false = superchat, true = gifting
+const gMode    = document.getElementById('gMode');
 const gModeLab = document.getElementById('gModeLabel');
 const gTier    = document.getElementById('gTier');
 const gTierWrap= document.getElementById('gTierWrap');
@@ -47,8 +47,8 @@ const prevFill = document.getElementById('prevFill');
 const CK_ID  = 'pd.videoId';
 const CK_MAX = 'pd.maxDrunkPct';
 const CK_REC = 'pd.shotRecord';
-const GW_KEY = 'pd.graffiti';           // { items:[{name,crown}], rev }
-const GOAL_KEY = 'pd.goal';             // { enabled, mode:'superchat'|'gifting', title, tier, target, progress }
+const GW_KEY = 'pd.graffiti';   // { items:[{name,crown}], rev }
+const GOAL_KEY = 'pd.goal';     // { enabled, mode, title, tier, target, progress }
 
 /* ---------------- helpers ---------------- */
 const setCookie = (k, v, days = 180) =>
@@ -57,6 +57,8 @@ const getCookie = (k) =>
   (document.cookie.split('; ').find(s => s.startsWith(k + '='))?.split('=')[1] || '');
 const delCookie = (k) =>
   (document.cookie = `${k}=; Max-Age=0; Path=/; SameSite=Lax`);
+
+const isObj = (v) => v && typeof v === 'object';
 
 function vidFrom(input) {
   const s = String(input || '').trim();
@@ -75,11 +77,11 @@ function isValidYouTube(val) {
     /[?&]v=[A-Za-z0-9_-]{11}/.test(s)
   );
 }
-function setBindDisabledByField(){ bindBtn.disabled = !isValidYouTube(yt.value); }
+function setBindDisabledByField(){ if (bindBtn && yt) bindBtn.disabled = !isValidYouTube(yt.value); }
 function setBoundUI(bound) {
   const on = !!(bound && bound.video_id);
-  discBtn.disabled = !on;
-  bindBtn.textContent = on ? 'Re-Bind & Start' : 'Bind & Start';
+  if (discBtn)  discBtn.disabled = !on;
+  if (bindBtn)  bindBtn.textContent = on ? 'Re-Bind & Start' : 'Bind & Start';
 }
 
 /* ---------------- Logs stickiness ---------------- */
@@ -109,32 +111,6 @@ async function waitForParser(desiredId, tries = 15, delayMs = 1500) {
   throw new Error('Parser didn’t come up on the requested video yet.');
 }
 
-/* ---------------- Full reset ---------------- */
-async function fullReset() {
-  try { await fetch(`${API}/api/admin/reset`, { method:'POST' }); } catch {}
-  // cookies
-  delCookie(CK_ID); delCookie(CK_MAX); delCookie(CK_REC);
-  // viewer/admin local state
-  localStorage.removeItem('pd.totalShots.last');
-  localStorage.removeItem('pd.drunkPct.last');
-  localStorage.removeItem('pd.sessionSnapshot');
-  localStorage.removeItem('pd.sessionEnded');
-  localStorage.removeItem('pd.shotRecord');
-  localStorage.removeItem('pd.maxDrunkPct');
-  // graffiti & goal
-  localStorage.removeItem(GW_KEY);
-  localStorage.removeItem(GOAL_KEY);
-
-  // UI
-  statusEl.textContent = JSON.stringify({ bound: null }, null, 2);
-  engineEl.textContent = JSON.stringify({
-    totalShots: 0, drunkPct: 0, activeGifts: 0, nextGiftEtaSec: null, queueDepth: 0
-  }, null, 2);
-  logsEl.textContent = '';
-  renderGW([]);
-  renderGoalPreview();
-}
-
 /* ---------------- Members (Graffiti) ---------------- */
 function normalizeGW(data){
   if (!data) return [];
@@ -151,8 +127,13 @@ function readGW(){
   catch { return []; }
 }
 function persistGW(list){
-  const payload = { items: list, rev: Date.now() }; // rev triggers viewer storage listeners
+  const payload = { items: list, rev: Date.now() };
   localStorage.setItem(GW_KEY, JSON.stringify(payload));
+  // best-effort server sync
+  fetch(`${API}/api/admin/graffiti/set`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ items: payload.items })
+  }).catch(()=>{});
 }
 function sortByName(a,b){
   return a.name.toLowerCase().localeCompare(b.name.toLowerCase(), undefined, { sensitivity:'base' });
@@ -167,10 +148,7 @@ function uniqueMerge(base, names){
   }
   return out.sort(sortByName);
 }
-function parseNamesInput(s){
-  // accept comma, semicolon, newline
-  return String(s||'').split(/[,;\n]/g).map(x => x.trim()).filter(Boolean);
-}
+function parseNamesInput(s){ return String(s||'').split(/[,;\n]/g).map(x => x.trim()).filter(Boolean); }
 function renderGW(list = readGW()){
   const frag = document.createDocumentFragment();
   const col = document.createElement('div'); col.className = 'gw-list-inner';
@@ -194,6 +172,7 @@ function renderGW(list = readGW()){
   if (gwList) { gwList.innerHTML = ''; gwList.appendChild(col); }
 }
 function addNamesFromInput(){
+  if (!gwName) return;
   const names = parseNamesInput(gwName.value);
   if (!names.length) return;
   const merged = uniqueMerge(readGW(), names);
@@ -202,23 +181,39 @@ function addNamesFromInput(){
 }
 gwAdd?.addEventListener('click', addNamesFromInput);
 gwName?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addNamesFromInput(); } });
-gwClear?.addEventListener('click', () => { persistGW([]); renderGW([]); });
+gwClear?.addEventListener('click', () => {
+  persistGW([]); renderGW([]);
+  fetch(`${API}/api/admin/graffiti/clear`, { method:'POST' }).catch(()=>{});
+});
 
 /* ---------------- Goal storage + UI ---------------- */
 function readGoal(){ try{ return JSON.parse(localStorage.getItem(GOAL_KEY)||'null'); }catch{return null;} }
-function writeGoal(g){ localStorage.setItem(GOAL_KEY, JSON.stringify(g)); renderGoalPreview(); }
-
+function writeGoal(g, {syncInputs=true} = {}){
+  localStorage.setItem(GOAL_KEY, JSON.stringify(g));
+  fetch(`${API}/api/admin/goal/save`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(g)
+  }).catch(()=>{});
+  renderGoalPreview({syncInputs});
+}
 function tierColor(tier,mode){
   const s=getComputedStyle(document.documentElement);
-  if(mode==='gifting') return s.getPropertyValue('--goal-gift')||'#8bc34a';
+  if(mode==='gifting') return (s.getPropertyValue('--goal-gift')||'#8bc34a').trim();
   const map={blue:'--goal-blue',lblue:'--goal-lblue',green:'--goal-green',yellow:'--goal-yellow',orange:'--goal-orange',pink:'--goal-pink',red:'--goal-red',any:'--goal-blue'};
-  return s.getPropertyValue(map[tier]||'--goal-blue')||'#1e88e5';
+  return (s.getPropertyValue(map[tier]||'--goal-blue')||'#1e88e5').trim();
 }
+
+/* prevent “revert while typing” */
+let goalEditing = false;
+let editIdleTimer = null;
+function markEditing(){ goalEditing = true; clearTimeout(editIdleTimer); editIdleTimer = setTimeout(()=>goalEditing=false, 1500); }
+[gTitle,gMode,gTier,gCount].forEach(el => el && el.addEventListener('input', markEditing));
+[gTitle,gMode,gTier,gCount].forEach(el => el && el.addEventListener('focus', markEditing));
+[gTitle,gMode,gTier,gCount].forEach(el => el && el.addEventListener('blur', ()=>{ goalEditing=false; }));
 
 function syncModeUI(){
   const gifting = !!gMode?.checked;
   if (gModeLab) gModeLab.textContent = gifting ? 'Member gifting' : 'Superchat';
-  // Tier dropdown only for Superchat
   if (gTierWrap) gTierWrap.classList.toggle('hidden', gifting);
   if (gGiftsLab) gGiftsLab.classList.toggle('hidden', !gifting);
 }
@@ -232,38 +227,41 @@ gSave?.addEventListener('click', ()=>{
   g.title = (gTitle?.value.trim()) || (g.mode==='gifting' ? 'Gifted memberships' : 'Superchat goal');
   g.tier  = gifting ? 'any' : (gTier?.value || 'blue');
   g.target= Math.max(1, Number(gCount?.value || 0) | 0);
-  // progress is intentionally preserved on Save/Update
-  writeGoal(g);
+  writeGoal(g, {syncInputs:false});
 });
-
 gManual?.addEventListener('click', ()=>{
   const g = readGoal(); if (!g?.enabled) return;
   g.progress = Math.min(g.target, (g.progress|0)+1);
-  writeGoal(g);
+  writeGoal(g, {syncInputs:false});
+  fetch(`${API}/api/admin/goal/add`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ delta:1 })
+  }).catch(()=>{});
 });
-
 gDelete?.addEventListener('click', ()=>{
   if(!confirm('Delete this goal?')) return;
   localStorage.removeItem(GOAL_KEY);
-  renderGoalPreview();
+  fetch(`${API}/api/admin/goal/delete`, {method:'POST'}).catch(()=>{});
+  renderGoalPreview({syncInputs:true});
 });
-
-function renderGoalPreview(){
+function renderGoalPreview({syncInputs=true} = {}){
   const g = readGoal();
   if (!g?.enabled) {
     if (prevWrap) prevWrap.hidden = true;
-    // also restore UI defaults
-    if (gTitle) gTitle.value = '';
-    if (gMode) gMode.checked = false;
-    if (gTier) gTier.value = 'blue';
-    if (gCount) gCount.value = 10;
-    syncModeUI();
+    if (syncInputs || !goalEditing){
+      if (gTitle) gTitle.value = '';
+      if (gMode)  gMode.checked = false;
+      if (gTier)  gTier.value = 'blue';
+      if (gCount) gCount.value = 10;
+      syncModeUI();
+    }
     return;
   }
   if (prevWrap) prevWrap.hidden = false;
 
   const done = Math.max(0, Math.min(g.target|0, g.progress|0));
   const pct  = g.target ? (done / g.target) * 100 : 0;
+
   if (prevTitle) prevTitle.textContent = g.title || '';
   if (prevFrac)  prevFrac.textContent  = `${done}/${g.target}`;
   if (prevFill) {
@@ -271,52 +269,50 @@ function renderGoalPreview(){
     prevFill.style.setProperty('--goalColor', tierColor(g.tier, g.mode));
   }
 
-  // populate current config back into form
-  if (gTitle) gTitle.value = g.title || '';
-  if (gMode)  gMode.checked = g.mode === 'gifting';
-  if (gTier)  gTier.value = g.tier || 'blue';
-  if (gCount) gCount.value = String(g.target || 10);
-  syncModeUI();
+  if ((syncInputs && !goalEditing) || !document.activeElement || document.activeElement.tagName === 'BODY') {
+    if (gTitle) gTitle.value = g.title || '';
+    if (gMode)  gMode.checked = g.mode === 'gifting';
+    if (gTier)  gTier.value = g.tier || 'blue';
+    if (gCount) gCount.value = String(g.target || 10);
+    syncModeUI();
+  }
 }
 
-/* Increment goal meter from new log lines only */
+/* Increment goal meter from newly arrived log lines */
 let lastLogLen = 0;
 function bumpFromLogs(lines){
   const g = readGoal(); if (!g?.enabled) return;
   if (!Array.isArray(lines)) return;
+
   const newLines = lines.slice(lastLogLen);
   lastLogLen = lines.length;
 
+  let bumped = 0;
   for (const line of newLines){
     const s = String(line || '');
     if (g.mode === 'superchat') {
-      // treat both Super Chats and Stickers as SC
       const isSC = /super\s*chat|paid\s*sticker|sticker/i.test(s);
       if (!isSC) continue;
-
-      if (g.tier === 'any') {
-        g.progress = Math.min(g.target, (g.progress|0) + 1);
-      } else {
-        // look for a tier mention in the text
+      if (g.tier === 'any') bumped += 1;
+      else {
         const tier = (s.match(/blue|light\s*blue|lblue|green|yellow|orange|pink|red/i)?.[0]||'').toLowerCase();
         const norm = tier === 'light blue' ? 'lblue' : tier;
-        if (norm && (norm === g.tier)) {
-          g.progress = Math.min(g.target, (g.progress|0) + 1);
-        }
+        if (norm && (norm === g.tier)) bumped += 1;
       }
     } else {
-      // gifting mode
       const m = s.replace(/,/g,'').match(/(?:gift(?:ed)?\s*)?(\d+)\s*memberships?/i);
-      if (m) {
-        const c = Math.max(1, parseInt(m[1], 10) || 1);
-        g.progress = Math.min(g.target, (g.progress|0) + c);
-      } else if (/gift(?:ed)?\s+membership/i.test(s)) {
-        // fallback 1
-        g.progress = Math.min(g.target, (g.progress|0) + 1);
-      }
+      if (m) bumped += Math.max(1, parseInt(m[1], 10) || 1);
+      else if (/gift(?:ed)?\s+membership/i.test(s)) bumped += 1;
     }
   }
-  writeGoal(g);
+  if (bumped) {
+    const g2 = readGoal(); if (!g2) return;
+    g2.progress = Math.min(g2.target, (g2.progress|0) + bumped);
+    writeGoal(g2, {syncInputs:false});
+    fetch(`${API}/api/admin/goal/add`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({delta:bumped})
+    }).catch(()=>{});
+  }
 }
 
 /* ---------------- hydrate cookies (viewer stats) ---------------- */
@@ -330,12 +326,32 @@ function bumpFromLogs(lines){
 /* ---------------- field gating ---------------- */
 yt?.addEventListener('input', setBindDisabledByField);
 setBindDisabledByField();
-discBtn.disabled = true;
+if (discBtn) discBtn.disabled = true;
 
 /* ---------------- actions ---------------- */
 resetBtn?.addEventListener('click', async () => {
   if (!confirm('Reset everything? This stops the parser, disconnects the game, and clears cookies + graffiti list + goals.')) return;
-  await fullReset();
+  try { await fetch(`${API}/api/admin/reset`,       { method: 'POST' }); } catch {}
+  try { await fetch(`${API}/api/admin/reset-store`, { method: 'POST' }); } catch {}
+  // local wipe
+  delCookie(CK_ID); delCookie(CK_MAX); delCookie(CK_REC);
+  localStorage.removeItem('pd.totalShots.last');
+  localStorage.removeItem('pd.drunkPct.last');
+  localStorage.removeItem('pd.sessionSnapshot');
+  localStorage.removeItem('pd.sessionEnded');
+  localStorage.removeItem('pd.shotRecord');
+  localStorage.removeItem('pd.maxDrunkPct');
+  localStorage.removeItem(GW_KEY);
+  localStorage.removeItem(GOAL_KEY);
+
+  if (statusEl) statusEl.textContent = JSON.stringify({ bound: null }, null, 2);
+  if (engineEl) engineEl.textContent = JSON.stringify({
+    totalShots: 0, drunkPct: 0, activeGifts: 0, nextGiftEtaSec: null, queueDepth: 0
+  }, null, 2);
+  if (logsEl) logsEl.textContent = '';
+  lastLogLen = 0;
+  renderGW([]);
+  renderGoalPreview();
 });
 
 bindBtn?.addEventListener('click', async () => {
@@ -346,21 +362,18 @@ bindBtn?.addEventListener('click', async () => {
   bindBtn.disabled = true;
   try {
     const active = await parserActive().catch(()=>null);
-    if (active?.ok && active.status === 'running') {
-      if (active.videoId && active.videoId !== desired) {
-        const force = confirm(`Parser is running on ${active.videoId}.\n\nSwitch it to ${desired}?`);
-        if (!force) return;
-        const en = await parserEnsure(youtube, { force:true });
-        if (!en?.ok) throw new Error(en?.error || 'Parser restart failed');
-        await waitForParser(desired);
-      }
-    } else {
+    if (active?.ok && active.status === 'running' && active.videoId && active.videoId !== desired) {
+      const force = confirm(`Parser is running on ${active.videoId}.\n\nSwitch it to ${desired}?`);
+      if (!force) return;
+      const en = await parserEnsure(youtube, { force:true });
+      if (!en?.ok) throw new Error(en?.error || 'Parser restart failed');
+      await waitForParser(desired);
+    } else if (!active?.ok || active.status !== 'running') {
       const en = await parserEnsure(youtube);
       if (!en?.ok) throw new Error(en?.error || 'Parser start failed');
       await waitForParser(desired);
     }
 
-    // bind engine
     const r = await fetch(`${API}/api/admin/bind`, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ youtube })
@@ -392,8 +405,8 @@ discBtn?.addEventListener('click', async () => {
       setCookie(CK_MAX, String(Math.round(s.maxDrunkPct ?? 0)));
     }
 
-    statusEl.textContent = JSON.stringify({ bound: null }, null, 2);
-    engineEl.textContent = JSON.stringify({
+    if (statusEl) statusEl.textContent = JSON.stringify({ bound: null }, null, 2);
+    if (engineEl) engineEl.textContent = JSON.stringify({
       totalShots: 0, drunkPct: 0, activeGifts: 0, nextGiftEtaSec: null, queueDepth: 0
     }, null, 2);
     setBoundUI(null);
@@ -406,19 +419,21 @@ discBtn?.addEventListener('click', async () => {
 /* ---- test helpers (include author for shouts) ---- */
 shotBtn?.addEventListener('click', async () => {
   const n = Math.max(1, Number(nInput?.value || 1) || 1);
-  const r = await fetch(`${API}/api/admin/test/shot`, {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ n, author: authorVal() })
-  });
-  try { await r.json(); } catch {}
+  try {
+    await fetch(`${API}/api/admin/test/shot`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ n, author: authorVal() })
+    });
+  } catch {}
 });
 giftBtn?.addEventListener('click', async () => {
   const n = Math.max(1, Number(nInput?.value || 5) || 5);
-  const r = await fetch(`${API}/api/admin/test/gift`, {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ n, author: authorVal() })
-  });
-  try { await r.json(); } catch {}
+  try {
+    await fetch(`${API}/api/admin/test/gift`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ n, author: authorVal() })
+    });
+  } catch {}
 });
 nInput?.addEventListener('keydown', (e)=>{ if (e.key==='Enter') shotBtn?.click(); });
 
@@ -427,16 +442,19 @@ nInput?.addEventListener('keydown', (e)=>{ if (e.key==='Enter') shotBtn?.click()
   const ev = new EventSource(`${API}/api/sse/admin`);
   ev.onmessage = (m) => {
     try {
-      const s = JSON.parse(m.data);
+      const s = JSON.parse(m.data || '{}');
 
-      // Header mini-summary
+      if (!('totalShots' in s || 'bound' in s || 'goal' in s || 'graffiti' in s)) return;
+
+      // header counters
       if (hTotal)  hTotal.textContent   = String(s.totalShots ?? 0);
       if (hPct)    hPct.textContent     = `${Number(s.drunkPct||0).toFixed(0)}%`;
       if (hRecord) hRecord.textContent  = String(s.shotRecord ?? 0);
       if (hMax)    hMax.textContent     = `${Number(s.maxDrunkPct||0).toFixed(0)}%`;
 
-      statusEl.textContent = JSON.stringify({ bound: s.bound }, null, 2);
-      engineEl.textContent = JSON.stringify({
+      // status + engine snapshot
+      if (statusEl) statusEl.textContent = JSON.stringify({ bound: s.bound }, null, 2);
+      if (engineEl) engineEl.textContent = JSON.stringify({
         totalShots: s.totalShots,
         drunkPct: s.drunkPct,
         activeGifts: s.activeGifts,
@@ -444,22 +462,51 @@ nInput?.addEventListener('keydown', (e)=>{ if (e.key==='Enter') shotBtn?.click()
         queueDepth: s.queueDepth
       }, null, 2);
 
+      // logs
       if (Array.isArray(s.logs)) {
         const newText = s.logs.join('\n');
         const wasStick = logsStick;
-        if (logsEl.textContent !== newText) {
+        if (logsEl && logsEl.textContent !== newText) {
           logsEl.textContent = newText;
           if (wasStick) logsEl.scrollTop = logsEl.scrollHeight;
         }
-        // update goal progress from only the newly arrived log lines
         bumpFromLogs(s.logs);
       }
+
+      // store mirrors (don’t stomp active edits)
+      if (isObj(s.goal) && !goalEditing) {
+        localStorage.setItem(GOAL_KEY, JSON.stringify(s.goal));
+        renderGoalPreview({syncInputs:false});
+      }
+      if (isObj(s.graffiti)) {
+        localStorage.setItem(GW_KEY, JSON.stringify(s.graffiti));
+        renderGW();
+      }
+
       setBoundUI(s.bound);
     } catch {}
   };
-  ev.onerror = () => setTimeout(connect, 1500);
+  ev.onerror = () => setTimeout(connect, 1200);
 })();
 
 /* ---------------- initial render ---------------- */
 renderGW();
-renderGoalPreview();
+renderGoalPreview({syncInputs:true});
+
+// prime admin page with persisted store (helps before SSE connects)
+(async function hydrateStoreOnce(){
+  try {
+    const [g1, g2] = await Promise.allSettled([
+      fetch(`${API}/api/admin/graffiti`).then(r=>r.json()),
+      fetch(`${API}/api/admin/goal`).then(r=>r.json())
+    ]);
+    if (g1.value?.graffiti) {
+      localStorage.setItem(GW_KEY, JSON.stringify(g1.value.graffiti));
+      renderGW();
+    }
+    if (g2.value?.goal) {
+      localStorage.setItem(GOAL_KEY, JSON.stringify(g2.value.goal));
+      renderGoalPreview({syncInputs:false});
+    }
+  } catch {}
+})();

@@ -109,8 +109,8 @@ html,body{ margin:0; background:var(--bg); color:var(--fg); font-family:Inter, s
   font-weight:800; font-size:12px;
 }
 .seg{ position:absolute; top:0; bottom:0; border-right:1px dashed #33405f; opacity:.7; }
-.s1{ left:12.5%; } .s2{ left:25%; } .s3{ left:36.5%; } .s4{ left:47%; }
-.s5{ left:57%; } .s6{ left:66%; } .s7{ left:74%; } .s8{ left:82%; }
+.s1{ left:10%; } .s2{ left:20%; } .s3{ left:30%; } .s4{ left:40%; } .s5{ left:50%; }
+.s6{ left:60%; } .s7{ left:70%; } .s8{ left:80%; } .s9{ left:90%; }
 
 /* ===== BAR SCENE ===== */
 .left-stage{
@@ -173,8 +173,9 @@ html,body{ margin:0; background:var(--bg); color:var(--fg); font-family:Inter, s
 
 /* Host Custom Styling */
 .host--buff   { max-width: 20%; }
-.host--batgirl{ max-width: 16%; } 
+.host--batgirl{ max-width: 14%; } 
 .host--stake   { max-width: 18%; }
+.host--boogie   { max-width: 20%; }
 
 
 /* shot lane (glasses slide under host, over background) */
@@ -230,7 +231,7 @@ html,body{ margin:0; background:var(--bg); color:var(--fg); font-family:Inter, s
 .chalkboard{
   position: absolute;
   right: 5%;
-  bottom: 45%;
+  bottom: 55%;
   width: clamp(150px, 15%, 200px);
   z-index: 10;
   pointer-events: none;
@@ -412,12 +413,14 @@ body.modal-open{ overflow: hidden; }
 /* === Graffiti Wall END (Viewer) === */
 
 
-/* ---------- GOAL BAR (front of the bar) ---------- */
+/* Segmented goal bar ---------------------------------------------- */
+#goalBar { --goalSegments: 10; }  /* default; JS will override */
+
 #goalBar{
   position:absolute;
   left:50%;
   transform: translateX(-50%);
-  bottom: 82px;                 /* tune once; this sits on the bar-wood */
+  bottom: 20px;                 /* tune once; this sits on the bar-wood */
   width: min(50vw, 50%);        /* 50% scene width */
   z-index: 30;                  /* ABOVE the bar front image */
   pointer-events:none;
@@ -426,15 +429,15 @@ body.modal-open{ overflow: hidden; }
 
 /* title above bar */
 .goal-title{
-  position:absolute;
-  left:0;
-  right:0;
-  top:-28px;
-  text-align:center;
-  font: 700 14px/1.2 ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;
-  color:#d8e8ff;
-  text-shadow: 0 1px 0 rgba(0,0,0,.65), 0 2px 6px rgba(0,0,0,.65);
-  letter-spacing:.02em;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -40px;
+  text-align: center;
+  font: 700 25px / 1.2 inter, ui-sans-serif, system-ui, Segoe UI, Roboto, Helvetica, Arial;
+  color: #e0d8d0;
+  text-shadow: 0 1px 0 rgb(89 56 56), 0 2px 6px rgb(255 255 255 / 76%);
+  letter-spacing: .02em;
 }
 
 /* fraction to the left of bar */
@@ -453,16 +456,45 @@ body.modal-open{ overflow: hidden; }
 /* track + fill */
 .goal-track{
   position:relative;
-  height: 14px;
-  border-radius: 10px;
+  height: 20px;
+  border-radius: 5px;
   overflow:hidden;
   background: linear-gradient(#1d2733,#121820);
   box-shadow:
      inset 0 1px 0 rgba(255,255,255,.06),
      inset 0 -2px 6px rgba(0,0,0,.55),
      0 8px 18px rgba(0,0,0,.35);
-  border: 1px solid rgba(255,255,255,.08);
-  backdrop-filter: blur(1px);
+  backdrop-filter: blur(10px);
+}
+
+/* faint ticks on the empty track */
+#goalBar .goal-track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to right,
+    rgba(255,255,255,.06) 0,
+    rgba(255,255,255,.06) 1px,
+    transparent 1px,
+    transparent calc(100% / var(--goalSegments, 10))
+  );
+}
+
+/* slightly brighter ticks inside the filled portion */
+#goalBar .goal-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to right,
+    rgba(255,255,255,.04) 0,
+    rgba(255,255,255,.04) 1px,
+    transparent 1px,
+    transparent calc(100% / var(--goalSegments, 10))
+  );
 }
 
 .goal-fill{

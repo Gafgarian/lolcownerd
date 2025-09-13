@@ -1,50 +1,60 @@
-// src/routes/sse.js
 import express from 'express';
 
-export function sseRoutes(engine) {
+/**
+ * SSE hub for admin + viewer.
+ * - Engine drives live updates via engine.addListener(res)
+ * - We send initial + store-change composite snapshots (engine + extraSnapshot)
+ * - Heartbeats are comments (:hb) so clients don't reset on keepalives
+ */
+export function sseRoutes(engine, { extraSnapshot = () => ({}), onStore } = {}) {
   const r = express.Router();
+  const clients = { admin: new Set(), viewer: new Set() };
 
-  // one place to open an SSE stream
-  function openSSE(req, res) {
-    // 1) headers once
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders?.();
+  const nowSnapshot = () => ({ ...engine.viewModel(), ...extraSnapshot() });
 
-    // 2) send a quick comment so the client considers the stream "open"
-    res.write(':\n\n');
+  function attach(kind, req, res) {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.write(': connected\n\n');
 
-    // 3) initial retry hint + first payload
-    res.write('retry: 2000\n\n');
-    res.write(`data: ${JSON.stringify(engine.viewModel())}\n\n`);
+    // Let the engine stream its own updates into this response
+    try { engine.addListener(res); } catch {}
 
-    // 4) keepalive (some proxies will kill idle connections)
-    const heartbeat = setInterval(() => {
-      if (!res.writableEnded) res.write(':\n\n');
-    }, 15000);
+    // Track for store-change broadcasts
+    clients[kind].add(res);
 
-    // 5) clean up on disconnect
-    const onClose = () => {
-      clearInterval(heartbeat);
-      engine.removeListener(res);
-    };
-    req.on('close', onClose);
-    req.on('end', onClose);
+    // Initial composite snapshot
+    res.write(`data: ${JSON.stringify(nowSnapshot())}\n\n`);
 
-    // 6) register this client to receive broadcasts
-    engine.addListener(res);
+    // Keep-alive (comment line → ignored by EventSource.onmessage)
+    const ping = setInterval(() => {
+      try { res.write(':hb\n\n'); } catch {}
+    }, 20000);
+
+    req.on('close', () => {
+      clearInterval(ping);
+      try { engine.removeListener(res); } catch {}
+      clients[kind].delete(res);
+    });
   }
 
-  r.get('/viewer', (req, res) => {
-    if (!engine.running) engine.start();
-    openSSE(req, res);
-  });
+  // When the persistent store changes (goal/graffiti), broadcast a composite snapshot
+  if (typeof onStore === 'function') {
+    onStore(() => {
+      const payload = JSON.stringify(nowSnapshot());
+      for (const set of Object.values(clients)) {
+        for (const res of set) {
+          try { res.write(`data: ${payload}\n\n`); } catch {}
+        }
+      }
+    });
+  }
 
-  r.get('/admin', (req, res) => {
-    if (!engine.running) engine.start();
-    openSSE(req, res);
-  });
-
+  r.get('/admin',  (req, res) => attach('admin',  req, res));
+  r.get('/viewer', (req, res) => attach('viewer', req, res));
   return r;
 }

@@ -1,7 +1,7 @@
 // --- DOM refs
 const totalEl   = document.getElementById('total');
 const fillEl    = document.getElementById('meterFill');
-const pctEl     = document.getElementById('meterPct');     // percent label INSIDE the bar
+const pctEl     = document.getElementById('meterPct');
 const etaEl     = document.getElementById('eta');
 
 const drunkTopEl = document.getElementById('drunkTop');
@@ -24,8 +24,9 @@ let lastShoutSeq = 0;
 // --- Host sprite sets (order matters)
 const HOSTS_META = [
   { name: 'buff',    dir: '/assets/hosts/buff'    },
-  { name: 'batgirl', dir: '/assets/hosts/batgirl' },
   { name: 'stake',   dir: '/assets/hosts/stake'   },
+  { name: 'boogie',   dir: '/assets/hosts/boogie'   },
+  { name: 'batgirl', dir: '/assets/hosts/batgirl' }
 ];
 
 const JOIN_AT = 30; // average drunk% threshold to add the next host
@@ -67,33 +68,33 @@ const GRAFFITI_FONTS = [
   '08Underground','Captions','PaintCans','Scrawler_3rd','Sprayerz','StencilDamage'
 ];
 
-// Where the admin writes; keep primary key but accept legacy keys/shapes too
+// Where the admin writes; accept legacy keys too (fallback only)
 const GW_KEY  = 'pd.graffiti';
 const GW_KEYS = [GW_KEY, 'pd.members', 'pd.gw'];
-function readGW() {
+
+function normalizeGW(raw){
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const arr = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed?.items)
+        ? parsed.items
+        : Array.isArray(parsed?.list)
+          ? parsed.list
+          : null;
+    if (!arr) return [];
+    return arr.map(x => ({
+      name: String(x?.name ?? x?.n ?? '').trim(),
+      crown: !!(x?.crown ?? x?.isCrown ?? x?.king),
+    })).filter(x => x.name);
+  } catch { return []; }
+}
+function readGWLocal(){
   for (const k of GW_KEYS) {
     const raw = localStorage.getItem(k);
     if (!raw) continue;
-    try {
-      const parsed = JSON.parse(raw);
-      // Accept array OR {items:[...]} OR {list:[...]}
-      const arr = Array.isArray(parsed)
-        ? parsed
-        : Array.isArray(parsed?.items)
-          ? parsed.items
-          : Array.isArray(parsed?.list)
-            ? parsed.list
-            : null;
-      if (arr) {
-        // Normalize shape -> {name, crown}
-        return arr
-          .map(x => ({
-            name: String(x?.name ?? x?.n ?? '').trim(),
-            crown: !!(x?.crown ?? x?.isCrown ?? x?.king),
-          }))
-          .filter(x => x.name.length);
-      }
-    } catch {}
+    const items = normalizeGW(raw);
+    if (items.length) return items;
   }
   return [];
 }
@@ -102,10 +103,9 @@ const graffitiLayer = document.createElement('div');
 graffitiLayer.className = 'graffiti-layer';
 const barFg = document.querySelector('.bar-fg');
 if (barFg?.parentElement) {
-  // ensure paint sits ON the wall (above bg, below fg)
-  barFg.parentElement.insertBefore(graffitiLayer, barFg);
+  barFg.parentElement.insertBefore(graffitiLayer, barFg); // on wall (below foreground)
 } else {
-  document.querySelector('.left-stage').appendChild(graffitiLayer);
+  document.querySelector('.left-stage')?.appendChild(graffitiLayer);
 }
 // === Graffiti Wall END (Viewer) ===========================
 
@@ -125,7 +125,6 @@ function makeHost(meta, initiallyHidden = false, side = '') {
 function ensureHostsUpTo(n){
   n = Math.max(1, Math.min(n, HOSTS_META.length));
   while (hosts.length < n) {
-    // 1) Nudge current hosts & widen the lane a touch
     hostsRow.classList.add('joining');
     hosts.forEach(h => h.el.classList.add('make-space'));
     
@@ -135,7 +134,6 @@ function ensureHostsUpTo(n){
     const h = makeHost(meta, true, sideClass);
     hosts.push(h);
     
-    // split the visible % across all current hosts (start them at the average)
     const avg = shownPct / hosts.length;
     hosts.forEach(x => x.pct = avg);
     
@@ -150,13 +148,13 @@ function ensureHostsUpTo(n){
   }
 }
 
-// fun shout bubble (optional)
+// fun shout bubble
 function showShout(name){
   if (!name) return;
   const el = document.createElement('div');
   el.className = 'shout';
   if (Math.random() < 0.5) el.classList.add('right');
-  el.style.top = `${8 + Math.random() * 18}%`; // 8–26% height band
+  el.style.top = `${8 + Math.random() * 18}%`;
   el.textContent = `“${name}!”`;
   barScene.appendChild(el);
   requestAnimationFrame(() => el.classList.add('show'));
@@ -165,15 +163,15 @@ function showShout(name){
 }
 
 // --- State
-let shownTotal = 0;          // UI total
-let shownPct   = 0;          // combined (average) drunk % in the meter
+let shownTotal = 0;
+let shownPct   = 0;
 let lastServerTotal = 0;
-let lastAvgEdge = 0;         // last value used for JOIN_AT rising-edge
+let lastAvgEdge = 0;
 let booted = false;
 
-const hosts = [ makeHost(HOSTS_META[0]) ]; // start with first host
-let rr = 0;                 // round-robin cursor for target selection
-const queue = [];           // glasses to animate
+const hosts = [ makeHost(HOSTS_META[0]) ];
+let rr = 0;
+const queue = [];
 
 // meter render
 function applyMeter(pct){
@@ -215,7 +213,7 @@ function spawnShot(targetIdx = 0){
   setTimeout(()=> h.el.style.transform = '', 90);
 }
 
-// swap avatar frames immediately (no dissolve)
+// swap avatar frames immediately
 function updateHostsView(){
   for (const h of hosts){
     const nextLevel = Math.min(7, Math.floor((h.pct / 100) * 8));
@@ -226,7 +224,7 @@ function updateHostsView(){
   }
 }
 
-// rising-edge join: when avg crosses JOIN_AT, add exactly one host
+// rising-edge join
 function maybeJoinByAverage() {
   if (lastAvgEdge < JOIN_AT && shownPct >= JOIN_AT && hosts.length < HOSTS_META.length) {
     ensureHostsUpTo(hosts.length + 1);
@@ -234,7 +232,7 @@ function maybeJoinByAverage() {
   lastAvgEdge = shownPct;
 }
 
-// drain queue one-at-a-time (so counts match visuals)
+// drain queue
 function pumpQueue(){
   if (queue.length > 0) {
     const target = queue.shift();
@@ -243,8 +241,7 @@ function pumpQueue(){
     shownTotal += 1;
     totalEl.textContent = String(shownTotal);
 
-    // 1 shot → 0.2% to the drinker; bar shows the average
-    const perHostStep  = 100 / 500;                // 0.2% per shot toward 100
+    const perHostStep  = 100 / 500;
     const combinedStep = perHostStep / hosts.length;
 
     hosts[target].pct = clamp100(hosts[target].pct + perHostStep);
@@ -313,35 +310,32 @@ function resetViewerLocal() {
   updateHostsView();
 }
 
-// === Graffiti Wall START (Viewer - layout) ================
+/* -------- Graffiti layout (safe zones + notch) -------- */
 function layoutGraffiti(items){
   graffitiLayer.innerHTML = '';
   if (!items || !items.length) return;
 
-  // Sort: crowns first (big), then by length (desc)
-  const sorted = [...items].sort((a,b)=>{
-    if (a.crown !== b.crown) return a.crown ? -1 : 1;
-    return (b.name?.length||0) - (a.name?.length||0);
-  });
+  // crowns first, then long names
+  const sorted = [...items].sort((a,b)=> (a.crown!==b.crown) ? (a.crown?-1:1) : (b.name.length - a.name.length));
 
   const stageRect = barScene.getBoundingClientRect();
 
   // Bands to avoid lights/sign (top) and counter (bottom)
   const PAD_L = 40, PAD_R = 40;
-  const TOP_BAND = 0.15;   // ~20% from top
-  const BOT_BAND = 0.17;   // ~17% from bottom
+  const TOP_BAND = 0.18;
+  const BOT_BAND = 0.20;
   const padTop = Math.round(stageRect.height * TOP_BAND);
   const padBot = Math.round(stageRect.height * BOT_BAND);
 
-  // Notch where the sign is (tweak if you move/resize the art)
+  // Notch where the sign is
   const notch = {
     x: Math.round(stageRect.width  * 0.06),
     y: Math.round(stageRect.height * 0.08),
     w: Math.round(stageRect.width  * 0.28),
     h: Math.round(stageRect.height * 0.22)
   };
-  const NOTCH_PAD_X = 24;
-  const NOTCH_PAD_Y = 36;
+  const NOTCH_PAD_X = 40;
+  const NOTCH_PAD_Y = 56;
 
   // Two safe zones: right of the sign, and below the sign (left block)
   const safeZones = [];
@@ -369,43 +363,33 @@ function layoutGraffiti(items){
   const inflate = (r, p) => ({ x: r.x - p, y: r.y - p, w: r.w + 2*p, h: r.h + 2*p });
 
   const taken = [];
-  const MAX_TRIES = 120;       // more than before
-  const GRID = 8;              // light grid snap helps reduce near-misses
-  const ROT_TWEAK = 8;         // degrees to try if a rotation helps fit
-  const MIN_SHRINK = 0.85;     // pigs can shrink down to 85% if needed
+  const MAX_TRIES = 120;
+  const GRID = 8;
+  const ROT_TWEAK = 8;
+  const MIN_SHRINK = 0.85;
 
   for (const it of sorted){
-    // Build tag element first so we can measure real rotated bounds
     const tag = document.createElement('span');
     tag.className = `g-tag ${it.crown ? 'g-crown' : 'g-pig'}`;
     tag.style.fontFamily = `'${choice(GRAFFITI_FONTS)}', sans-serif`;
     tag.textContent = it.name;
 
-    // Size/rotation
-    let baseSize = it.crown ? 6 : rand(2, 3); // crowns in em, pigs in rem
-    let sizeUnit = it.crown ? 'em' : 'rem';
+    let baseSize = it.crown ? 6 : rand(2.5, 3.5);
+    let unit = it.crown ? 'em' : 'rem';
     let rot = rand(-18, 18);
 
     let placed = false;
-    let shrink = 1.0;
 
     for (let attempt = 0; attempt < 3 && !placed; attempt++){
-      // On subsequent attempts, shrink pigs a bit if needed
-      const factor = attempt === 0 ? 1 : Math.max(MIN_SHRINK, 1 - attempt * 0.07);
-      shrink = it.crown ? 1 : factor;
-
-      tag.style.fontSize = `${(baseSize * shrink).toFixed(2)}${sizeUnit}`;
+      const shrink = it.crown ? 1 : Math.max(MIN_SHRINK, 1 - attempt * 0.07);
+      tag.style.fontSize = `${(baseSize * shrink).toFixed(2)}${unit}`;
       tag.style.transform = `rotate(${rot.toFixed(1)}deg)`;
       graffitiLayer.appendChild(tag);
 
-      // Measure the axis-aligned post-transform bounding box
       const box = tag.getBoundingClientRect();
       const w = box.width, h = box.height;
-
-      // Keep-out pad scales with height (more glow => larger pad)
       const PAD = Math.max(10, Math.round(h * (it.crown ? 0.24 : 0.18)));
 
-      // Try many random positions (with a small grid snap)
       for (let t = 0; t < MAX_TRIES && !placed; t++){
         const zone = choice(safeZones);
         if (!zone) break;
@@ -424,28 +408,21 @@ function layoutGraffiti(items){
           break;
         }
 
-        // If we collide and we're near the end of tries, nudge rotation to seek a new bbox
         if (t === (MAX_TRIES >> 1) || t === (MAX_TRIES - 1)){
           rot = Math.max(-24, Math.min(24, rot + (Math.random()<0.5?-ROT_TWEAK:ROT_TWEAK)));
           tag.style.transform = `rotate(${rot.toFixed(1)}deg)`;
-          // re-measure after rotation tweak
           const b2 = tag.getBoundingClientRect();
           rect.w = b2.width; rect.h = b2.height;
         }
       }
 
-      if (!placed){
-        // This attempt failed: remove the tag and try a smaller one (for pigs)
-        graffitiLayer.removeChild(tag);
-      }
+      if (!placed) graffitiLayer.removeChild(tag);
     }
 
     if (!placed){
-      // Fallback: tuck along lower safe zone edge without collisions if possible
       const z = safeZones[0] || { x: PAD_L, y: padTop, w: stageRect.width - PAD_L - PAD_R, h: stageRect.height - padTop - padBot };
       tag.style.left = `${z.x + (taken.length * 14) % Math.max(80, z.w - 160)}px`;
       tag.style.top  = `${z.y + Math.max(0, z.h - (tag.getBoundingClientRect().height || 0) - 12)}px`;
-      // Still push an inflated rect so later items avoid it
       const bb = tag.getBoundingClientRect();
       taken.push(inflate({ x: parseFloat(tag.style.left), y: parseFloat(tag.style.top), w: bb.width, h: bb.height }, 12));
       graffitiLayer.appendChild(tag);
@@ -454,17 +431,17 @@ function layoutGraffiti(items){
 }
 
 // hydrate on first load
-layoutGraffiti(readGW());
+layoutGraffiti(readGWLocal());
 if (document.fonts && document.fonts.ready) {
-  document.fonts.ready.then(() => layoutGraffiti(readGW()));
+  document.fonts.ready.then(() => layoutGraffiti(readGWLocal()));
 }
 
-// live updates from Admin tab
+// live updates (fallback only)
 window.addEventListener('storage', (e) => {
-  if (GW_KEYS.includes(e.key)) layoutGraffiti(readGW());
+  if (GW_KEYS.includes(e.key)) layoutGraffiti(readGWLocal());
 });
-window.addEventListener('resize', () => layoutGraffiti(readGW()));
-// === Graffiti Wall END (Viewer - layout) ==================
+window.addEventListener('resize', () => layoutGraffiti(readGWLocal()));
+// === Graffiti Wall END ================================
 
 // ---------- Goal: UI + render ----------
 const goalEl = document.getElementById('goalBar') || (() => {
@@ -479,26 +456,27 @@ const goalTitleEl = goalEl.querySelector('.goal-title');
 const goalFracEl  = goalEl.querySelector('.goal-fraction');
 const goalFillEl  = goalEl.querySelector('.goal-fill');
 
-function readGoal(){
-  try { return JSON.parse(localStorage.getItem('pd.goal')||'null'); } catch { return null; }
-}
 function colorForTier(tier, mode){
   if (mode === 'gifting') return getComputedStyle(document.documentElement).getPropertyValue('--goal-gift') || '#8bc34a';
-  const map = {
-    blue:'--goal-blue', lblue:'--goal-lblue', green:'--goal-green',
-    yellow:'--goal-yellow', orange:'--goal-orange', pink:'--goal-pink', red:'--goal-red'
-  };
+  const map = { blue:'--goal-blue', lblue:'--goal-lblue', green:'--goal-green', yellow:'--goal-yellow', orange:'--goal-orange', pink:'--goal-pink', red:'--goal-red' };
   const varName = map[tier] || '--goal-blue';
   return getComputedStyle(document.documentElement).getPropertyValue(varName) || '#1e88e5';
 }
-function renderGoal(){
-  const g = readGoal();
-  if (!g) { goalEl.style.display = 'none'; return; }
-  // Normalize legacy shapes
+
+function readGoalLocal(){
+  try { return JSON.parse(localStorage.getItem('pd.goal')||'null'); } catch { return null; }
+}
+
+function renderGoalFrom(g){
+  if (!g || g.enabled === false || !Number(g.target || 0)) {
+    goalEl.style.display = 'none';
+    return;
+  }
   const mode = g.mode || (g.kind === 'gift' ? 'gifting' : 'superchat');
-  const enabled = (g.enabled !== false); // treat missing as enabled
   const target  = Math.max(0, Number(g.target || 0));
-  if (!enabled || !target) { goalEl.style.display = 'none'; return; }
+
+  const segs = Math.max(1, Math.min(50, target|0));
+  goalEl.style.setProperty('--goalSegments', segs);
 
   const done = Math.max(0, Math.min(target, (g.progress|0)));
   const pct  = Math.max(0, Math.min(100, (done / target) * 100));
@@ -506,26 +484,90 @@ function renderGoal(){
   goalTitleEl.textContent = g.title || (mode==='gifting' ? 'Gifted memberships' : 'Superchat goal');
   goalFracEl.textContent  = `${done}/${target}`;
   goalFillEl.style.width  = pct.toFixed(2) + '%';
+
   const col = colorForTier(g.tier || 'blue', mode);
-  goalEl.style.setProperty('--goalColor', col.trim() || '#5cc08c');
+  goalEl.style.setProperty('--goalColor', (g.color || col).trim());
   goalEl.style.display = 'block';
+
+  maybeCelebrate(g, done, target);
 }
-renderGoal();
 
-// watch for admin updates
-window.addEventListener('storage', (e)=>{
-  if (e.key === 'pd.graffiti' || e.key === 'pd.members' || e.key === 'pd.gw') layoutGraffiti(readGW());
-  if (e.key === 'pd.goal') renderGoal();
-});
+// first render (fallback)
+renderGoalFrom(readGoalLocal());
+window.addEventListener('storage', (e)=>{ if (e.key === 'pd.goal') renderGoalFrom(readGoalLocal()); });
 
-// --- SSE hookup (server drives truth; we only animate the DELTA)
+// --- “Goal reached” celebration modal ---
+const CELEB_KEY = 'pd.goal.lastCelebrated';
+function sigForGoal(g){
+  return `${g.mode||'sc'}|${g.title||''}|${g.tier||'blue'}|${g.target||0}`;
+}
+function maybeCelebrate(g, done, target){
+  if (done < target) return;
+  const sig = sigForGoal(g);
+  if (localStorage.getItem(CELEB_KEY) === sig) return;
+
+  let overlay = document.getElementById('goalOverlay');
+  if (!overlay){
+    overlay = document.createElement('div');
+    overlay.id = 'goalOverlay';
+    overlay.style.cssText = `
+      position:fixed; inset:0; background:rgba(0,0,0,.55);
+      display:grid; place-items:center; z-index:9999;
+    `;
+    const card = document.createElement('div');
+    card.style.cssText = `
+      background:#0f1422; color:#e8ecf4; border:1px solid #3a4667;
+      padding:18px 22px; border-radius:14px; box-shadow:0 8px 30px rgba(0,0,0,.5);
+      text-align:center; max-width:520px;
+    `;
+    card.innerHTML = `
+      <div style="font-size:42px; line-height:1; margin-bottom:8px">🎉</div>
+      <div style="font-size:20px; font-weight:700; margin-bottom:4px">Goal reached!</div>
+      <div style="opacity:.85; margin-bottom:14px">${(g.title||'Stream goal')} completed — ${g.mode==='gifting'?'gifts':'superchats'} ${g.target}/${g.target}</div>
+      <button id="goalOk" style="padding:10px 14px; border-radius:10px; border:1px solid #2e3a5a; background:#1b2541; color:#e8ecf4; cursor:pointer">Nice!</button>
+    `;
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e)=>{ if (e.target.id==='goalOk' || e.target===overlay) overlay.remove(); });
+  }
+  localStorage.setItem(CELEB_KEY, sig);
+}
+
+// --- SSE hookup (server drives truth; mirror GW/Goal if provided) ---
+let lastGraffitiRev = null; // to avoid re-layout thrash
 (function connect(){
   const ev = new EventSource(`${location.origin}/api/sse/viewer`);
 
   ev.onmessage = (m) => {
-    const s = JSON.parse(m.data);
+    const s = JSON.parse(m.data || '{}');
 
-    // If server says we’re unbound, wipe viewer immediately and wait for next bind
+    if (!('totalShots' in s || 'bound' in s || 'goal' in s || 'graffiti' in s)) return;
+
+    // ----- Graffiti: only re-render when rev/data actually changes
+    if ('graffiti' in s) {
+      const payload = s.graffiti;
+      const items = Array.isArray(payload) ? payload : normalizeGW(payload);
+      const rev = (payload && payload.rev) || JSON.stringify(items);
+      if (rev !== lastGraffitiRev) {
+        layoutGraffiti(items);
+        lastGraffitiRev = rev;
+        // persist as {items,rev} so Admin <-> Viewer storage stays in sync
+        localStorage.setItem('pd.graffiti', JSON.stringify({ items, rev }));
+      }
+    }
+
+    // ----- Goal: also react when it’s deleted/cleared (null)
+    if ('goal' in s) {
+      if (s.goal) {
+        renderGoalFrom(s.goal);
+        localStorage.setItem('pd.goal', JSON.stringify(s.goal));
+      } else {
+        localStorage.removeItem('pd.goal');
+        renderGoalFrom(null); // hide
+      }
+    }
+
+    // unbound → wipe viewer
     if (!s.bound && !s.sandbox) {
       resetViewerLocal();
       etaEl.textContent = '—';
@@ -546,11 +588,9 @@ window.addEventListener('storage', (e)=>{
       lastServerTotal = shownTotal;
       shownPct        = Number(s.drunkPct || 0);
 
-      // reflect server's host count if provided
       const wantHosts = Math.max(1, Number(s.hostsCount || 1));
       ensureHostsUpTo(Math.min(wantHosts, HOSTS_META.length));
 
-      // initialize per-host pcts to the current average
       const init = hosts.length ? (shownPct / hosts.length) : 0;
       hosts.forEach(h => h.pct = init);
       updateHostsView();
@@ -564,13 +604,13 @@ window.addEventListener('storage', (e)=>{
       return;
     }
 
-    // reflect server host count growth (never shrink visually mid-stream)
+    // reflect server host count growth
     if ('hostsCount' in s) {
       const want = Math.max(1, Math.min(HOSTS_META.length, Number(s.hostsCount) || 1));
       if (want > hosts.length) ensureHostsUpTo(want);
     }
 
-    // exact delta scheduling; distribute round-robin over active hosts
+    // exact delta scheduling; distribute round-robin
     const serverNow   = Number(s.totalShots || 0);
     const serverDelta = Math.max(0, serverNow - lastServerTotal);
     if (serverDelta) {
@@ -604,7 +644,7 @@ window.addEventListener('storage', (e)=>{
       }
     }
 
-    // gently reconcile hosts so their average matches the bar without flattening them
+    // reconcile hosts
     if (hosts.length) {
       const curAvg = hosts.reduce((a,h)=>a + (h.pct||0), 0) / hosts.length;
       const need   = shownPct - curAvg;
@@ -622,7 +662,6 @@ window.addEventListener('storage', (e)=>{
       updateHostsView();
     }
 
-    // check JOIN_AT rising edge no matter how we moved
     maybeJoinByAverage();
   };
 

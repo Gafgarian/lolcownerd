@@ -1,4 +1,3 @@
-// src/routes/admin.js
 import express from 'express';
 
 // === Parser API config (.env) ===
@@ -12,8 +11,8 @@ async function pFetch(path, init = {}) {
     headers: {
       'content-type': 'application/json',
       'x-api-key': PARSER_API_KEY,
-      ...(init.headers || {})
-    }
+      ...(init.headers || {}),
+    },
   });
 }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -54,7 +53,11 @@ async function bindByVideoIdWithRetry(engine, videoId, tries = 12, delayMs = 125
   throw lastErr;
 }
 
-export function adminRoutes(engine){
+/**
+ * Admin routes. Accepts the engine and (NEW) the persisted store so we can
+ * reset goal + graffiti alongside engine state, and broadcast immediately.
+ */
+export function adminRoutes(engine, store){
   const router = express.Router();
 
   // ----- Bind (coordinates with parser) -----
@@ -112,23 +115,38 @@ export function adminRoutes(engine){
     } catch (e) { next(e); }
   });
 
-  // ----- Reset everything (stop parser, stop engine, clear state) -----
+  // ----- Reset EVERYTHING (parser, engine, store) -----
   router.post('/reset', async (_req, res) => {
     try { await fetch(`${process.env.SELF_ORIGIN || ''}/api/parser/stop`, { method:'POST' }); } catch {}
+
     try { engine.stop(); } catch {}
-    try { engine.resetAll(); } catch {}
+    try { engine.resetAll?.(); } catch {}
+
+    // also clear persisted store so viewer/admin truly reset
+    try { store?.setGraffiti([]); } catch {}
+    try { store?.clearGoal(); } catch {}
+
+    // preserve existing behavior
     engine.bound = null;
     engine.logs = [];
-    try { engine.broadcast(); } catch {}
+
+    // push a fresh snapshot to SSE clients (admin + viewer)
+    try { engine.broadcast?.(); } catch {}
+
     res.json({ ok:true });
   });
 
-  // ----- Disconnect (snapshot + reset) -----
+  // ----- Disconnect (snapshot + reset engine + clear store) -----
   router.post('/disconnect', (req, res, next) => {
     try {
       engine.stop();
-      const snapshot = engine.viewModel();
-      engine.resetAll();
+      const snapshot = engine.viewModel ? engine.viewModel() : (engine.snapshot?.() || {});
+      engine.resetAll?.();
+
+      try { store?.setGraffiti([]); } catch {}
+      try { store?.clearGoal(); } catch {}
+      try { engine.broadcast?.(); } catch {}
+
       res.json({ ok:true, snapshot });
     } catch (e) { next(e); }
   });
@@ -136,20 +154,20 @@ export function adminRoutes(engine){
   // ----- Tests -----
   router.post('/test/shot', (req, res, next) => {
     try {
-      if (!engine.running) engine.start();
       const n = Math.max(1, Math.min(5000, Number(req.body?.n) || 1));
-      engine.start();
-      engine.testAddShots(Number(req.body?.n || 1), String(req.body?.author || 'Admin'));
+      const author = String(req.body?.author || 'Admin');
+      if (!engine.running) engine.start();
+      engine.testAddShots?.(n, author);
       res.json({ ok:true, queued:n });
     } catch (e) { next(e); }
   });
 
   router.post('/test/gift', (req, res, next) => {
     try {
-      if (!engine.running) engine.start();
       const seconds = Math.max(1, Math.min(3600, Number(req.body?.n) || 5));
-      engine.start();
-      engine.testGiftSeconds(Number(req.body?.n || 5), String(req.body?.author || 'Admin'));
+      const author = String(req.body?.author || 'Admin');
+      if (!engine.running) engine.start();
+      engine.testGiftSeconds?.(seconds, author);
       res.json({ ok:true, giftSeconds:seconds });
     } catch (e) { next(e); }
   });

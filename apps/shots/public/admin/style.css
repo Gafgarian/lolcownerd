@@ -74,6 +74,7 @@ input:focus, button:focus, select:focus { outline:2px solid #2b5ea8; outline-off
 .goal-fill{ height:100%; width:0%; background:var(--goalColor, var(--goal-gift)); transition:width .25s ease; }
 
 .input.small{ width:120px; }
+.input.mid{ width:400px; }
 
 /* toggle switch */
 .switch { position:relative; display:inline-block; width:54px; height:30px; }
